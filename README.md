@@ -16,7 +16,7 @@ The project combines:
 * **AWS** for cloud infrastructure
 * **AI Infrastructure Copilot** for infrastructure analysis, security recommendations, configuration explanations, and failure analysis
 
-The primary goal is to make the infrastructure **reproducible, automated, explainable, and cost-conscious**.
+The primary goal is to make the infrastructure **reproducible, automated, explainable, secure, and cost-conscious**.
 
 ---
 
@@ -39,9 +39,9 @@ The target architecture follows a clear separation of responsibilities:
               │                          │
               │  ┌────────────────────┐  │
               │  │   Public Subnets   │  │
-              │  │        │           │  │
+              │  │                    │  │
               │  │       ALB          │  │
-              │  └────────┼───────────┘  │
+              │  └────────┬───────────┘  │
               │           │              │
               │  ┌────────▼───────────┐  │
               │  │  Private Subnets   │  │
@@ -85,6 +85,12 @@ The target architecture follows a clear separation of responsibilities:
  Analysis  Analysis     Analysis
 ```
 
+The architecture is being implemented incrementally.
+
+**Current implementation:** the AWS networking foundation is complete, including the VPC, public and private subnets, routing, Internet Gateway, and security groups.
+
+**Planned implementation:** EC2, IAM, private server management, Application Load Balancer, Docker deployment, monitoring, and AI-assisted infrastructure analysis will be added in subsequent stages.
+
 Terraform and Ansible remain responsible for making infrastructure and configuration changes.
 
 The AI layer is intentionally **read-only with respect to infrastructure changes**: it analyzes and recommends but does not directly modify AWS resources.
@@ -113,7 +119,7 @@ Provision AWS infrastructure
 Ansible
     │
     ├── Configure users
-    ├── Configure SSH
+    ├── Configure private server access
     ├── Install Docker
     ├── Configure server
     ├── Configure monitoring
@@ -235,7 +241,15 @@ The repository is organized around clear infrastructure and automation responsib
 aws-infrastructure-automation/
 │
 ├── terraform/
-│   └── Infrastructure as Code
+│   ├── providers.tf
+│   ├── versions.tf
+│   ├── variables.tf
+│   ├── main.tf
+│   ├── outputs.tf
+│   ├── vpc.tf
+│   ├── subnets.tf
+│   ├── routes.tf
+│   └── security_groups.tf
 │
 ├── ansible/
 │   └── Server configuration and deployment
@@ -263,17 +277,47 @@ The directory structure will evolve as each implementation stage is completed.
 
 The target AWS environment will include:
 
+### Implemented
+
 * VPC
 * Public subnets
 * Private subnets
 * Route tables
 * Internet Gateway
 * Security groups
+
+The current networking foundation uses:
+
+```text
+VPC
+10.0.0.0/16
+│
+├── Public Subnet A
+│   └── 10.0.1.0/24
+│
+├── Public Subnet B
+│   └── 10.0.2.0/24
+│
+├── Private Subnet A
+│   └── 10.0.11.0/24
+│
+└── Private Subnet B
+    └── 10.0.12.0/24
+```
+
+Public subnets have a route to the Internet Gateway.
+
+Private subnets currently have dedicated route tables without a default Internet route. This keeps the networking foundation intentionally minimal until the private compute and management architecture is implemented.
+
+### Planned
+
 * IAM roles and instance profiles
 * EC2 instances
+* Systems Manager-based private server management
 * Application Load Balancer
 * Target groups
 * Health checks
+* Required private connectivity for management and application image access
 
 The infrastructure will be implemented using reusable and parameterized Terraform configuration.
 
@@ -286,13 +330,15 @@ Ansible will be responsible for configuration management after infrastructure pr
 Planned responsibilities include:
 
 * Creating deployment users
-* Configuring SSH
+* Configuring secure server access
 * Installing Docker
 * Configuring Docker
 * Applying server configuration
 * Deploying the application
 * Configuring monitoring
 * Performing post-deployment validation
+
+Private EC2 management will be designed around **AWS Systems Manager** rather than exposing SSH access directly to the public internet.
 
 Ansible roles will be designed to be **idempotent**, allowing configuration to be safely re-applied.
 
@@ -302,7 +348,7 @@ Ansible roles will be designed to be **idempotent**, allowing configuration to b
 
 A primary goal of this project is reproducibility.
 
-The intended workflow is:
+The intended final workflow is:
 
 ```bash
 terraform init
@@ -310,25 +356,35 @@ terraform plan
 terraform apply
 ```
 
-followed by:
-
-```bash
-ansible-playbook -i inventory site.yml
-```
-
-and finally:
+followed by server configuration and deployment:
 
 ```text
-Docker deployment
-        ↓
+Infrastructure
+      ↓
+Server Management
+      ↓
+Ansible Configuration
+      ↓
+Docker Deployment
+      ↓
 Application
-        ↓
-Health check
-        ↓
-Running environment
+      ↓
+Health Check
+      ↓
+Running Environment
 ```
 
 The infrastructure should be possible to recreate from the repository rather than relying on manually configured AWS resources.
+
+At the current stage, the Terraform configuration can be initialized, validated, and planned without provisioning AWS resources.
+
+Example:
+
+```bash
+terraform -chdir=terraform init
+terraform -chdir=terraform validate
+terraform -chdir=terraform plan
+```
 
 ---
 
@@ -341,12 +397,21 @@ The project will follow principles such as:
 * Least-privilege IAM permissions
 * Restricted security group rules
 * No unnecessary public access
+* Private application compute where applicable
+* Managed server access instead of publicly exposed SSH
 * Non-root Docker containers where applicable
-* Secure SSH configuration
 * Secrets kept outside version control
 * Environment-specific configuration
 * Explicit infrastructure changes through Terraform
 * AI analysis separated from infrastructure execution
+
+The current networking design reflects these principles:
+
+* The application EC2 layer is intended to reside in private subnets.
+* The ALB will be internet-facing.
+* Application traffic to EC2 will be restricted through security-group relationships.
+* Private subnets do not currently expose a default internet route.
+* SSH is not exposed through the current security groups.
 
 Sensitive files such as credentials, private keys, Terraform state files, and environment files will not be committed to the repository.
 
@@ -363,6 +428,17 @@ Infrastructure decisions will consider:
 * Minimal compute resources
 * Explicit cleanup procedures
 * Avoiding resources that continue generating costs after testing
+* Evaluating recurring networking costs before implementation
+* Using private connectivity only where it provides a clear architectural benefit
+
+The project intentionally does **not** provision a NAT Gateway as part of the current networking foundation.
+
+When private EC2 management and application connectivity are implemented, the project will evaluate the cost and architectural trade-offs of options such as:
+
+* Systems Manager connectivity
+* VPC interface endpoints
+* ECR/S3 connectivity
+* NAT Gateway-based egress
 
 Before deploying the complete environment, AWS resource costs and cleanup requirements will be documented.
 
@@ -370,9 +446,9 @@ Before deploying the complete environment, AWS resource costs and cleanup requir
 
 ## Development Workflow
 
-The project will be developed incrementally.
+The project is being developed incrementally.
 
-Each stage will introduce and validate a specific part of the platform:
+Each stage introduces and validates a specific part of the platform:
 
 ```text
 Stage 1
@@ -412,35 +488,66 @@ Stage 12
 Portfolio & Documentation
 ```
 
+Each stage is validated before moving to the next stage.
+
+---
+
+## Current Stage
+
+### Stage 3 — AWS Networking ✅
+
+Completed:
+
+* VPC with `10.0.0.0/16` CIDR
+* Two public subnets across multiple Availability Zones
+* Two private subnets across multiple Availability Zones
+* Internet Gateway
+* Public route table
+* Private route tables
+* Route table associations
+* Application Load Balancer security group
+* Private EC2 security group
+* Security-group-based application traffic rules
+* Terraform formatting and validation
+* Terraform plan validation
+
+Current Terraform plan:
+
+```text
+Plan: 15 to add, 0 to change, 0 to destroy.
+```
+
+No AWS infrastructure has been provisioned yet.
+
+The current stage intentionally stops at the **networking foundation**. Private server management, IAM, compute, load balancing, and the required private connectivity will be designed in subsequent stages.
+
 ---
 
 ## Status
 
 🚧 **Project under development**
 
-Current stage:
+**Completed:**
 
-**Stage 1 — Project Initialization**
+* Stage 1 — Project Initialization
+* Stage 2 — Terraform Foundation
+* Stage 3 — AWS Networking
 
-Completed:
+**Current focus:**
 
-* Repository initialized
-* Project structure created
-* Git configured
-* MIT license added
-* Initial `.gitignore` configured
+* Stage 4 — Security & IAM
 
-Upcoming:
+**Upcoming:**
 
-* Terraform foundation
-* AWS networking
-* Security and IAM
 * EC2 and load balancing
+* Private server management with AWS Systems Manager
 * Ansible configuration
 * Docker deployment
 * Monitoring and validation
 * Reproducible automation
 * AI Infrastructure Copilot
+* AI explanation and failure analysis
+* Portfolio documentation
 
 ---
 
