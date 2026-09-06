@@ -1,0 +1,29 @@
+---
+- name: Update all installed packages
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_only: true
+
+- name: Install essential system packages
+  ansible.builtin.dnf:
+    name:
+      - git
+      - curl-minimal
+      - unzip
+      - tar
+      - vim
+      - htop
+    state: present
+
+- name: Set system timezone
+  community.general.timezone:
+    name: UTC
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: /opt/app
+    state: directory
+    owner: deploy
+    group: deploy
+    mode: "0755"

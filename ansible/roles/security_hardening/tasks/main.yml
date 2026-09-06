@@ -1,0 +1,50 @@
+---
+
+- name: Disable IP forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "0"
+    state: present
+    reload: true
+
+- name: Disable IPv6 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "0"
+    state: present
+    reload: true
+
+- name: Disable ICMP redirects
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.accept_redirects
+    value: "0"
+    state: present
+    reload: true
+
+- name: Disable secure ICMP redirects
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.secure_redirects
+    value: "0"
+    state: present
+    reload: true
+
+- name: Disable source routing
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.accept_source_route
+    value: "0"
+    state: present
+    reload: true
+
+- name: Enable reverse path filtering
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.rp_filter
+    value: "1"
+    state: present
+    reload: true
+
+- name: Disable IPv4 ICMP redirects being sent
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.send_redirects
+    value: "0"
+    state: present
+    reload: true

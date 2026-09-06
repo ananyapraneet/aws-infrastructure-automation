@@ -1,0 +1,9 @@
+---
+- name: Create deployment user
+  ansible.builtin.user:
+    name: deploy
+    shell: /bin/bash
+    create_home: true
+    groups: wheel
+    append: true
+    state: present

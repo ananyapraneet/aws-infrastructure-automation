@@ -12,7 +12,7 @@ The project combines:
 
 * **Terraform** for infrastructure provisioning
 * **Ansible** for server configuration and configuration management
-* **Docker** for application deployment
+* **Docker** for application deployment and Ansible controller isolation
 * **AWS** for cloud infrastructure
 * **AI Infrastructure Copilot** for infrastructure analysis, security recommendations, configuration explanations, and failure analysis
 
@@ -50,7 +50,7 @@ The infrastructure follows a layered architecture that separates public traffic,
               ┌────────────────┼────────────────┐
               │                │                │
               ▼                ▼                ▼
-        SSM Endpoint     ECR API / DKR     S3 Gateway
+        SSM Endpoints     ECR API / DKR     S3 Gateway
            :443             :443             Endpoint
               │                │                │
               └────────────────┼────────────────┘
@@ -89,7 +89,7 @@ The infrastructure follows a layered architecture that separates public traffic,
    Analysis  Analysis     Analysis
 ```
 
-The infrastructure is being implemented incrementally.
+The infrastructure is implemented incrementally using Terraform and Ansible, with Docker providing an isolated and reproducible automation environment.
 
 ### Current implementation
 
@@ -107,6 +107,7 @@ The Terraform foundation currently includes:
 * AWS Systems Manager private connectivity
 * ECR private connectivity
 * S3 Gateway VPC endpoint
+* S3 bucket used by Ansible's AWS Systems Manager connection
 
 The private EC2 instance does **not** receive a public IP and does not require publicly exposed SSH access.
 
@@ -155,10 +156,11 @@ Provision AWS infrastructure
 Ansible
     │
     ├── Configure users
-    ├── Configure private server access
+    ├── Configure secure server access
+    ├── Configure system
     ├── Install Docker
-    ├── Configure server
-    ├── Configure monitoring
+    ├── Configure Docker
+    ├── Apply security hardening
     └── Validate server
     │
     ▼
@@ -278,8 +280,8 @@ The repository is organized around clear infrastructure and automation responsib
 aws-infrastructure-automation/
 │
 ├── terraform/
+│   ├── .terraform.lock.hcl
 │   ├── providers.tf
-│   ├── versions.tf
 │   ├── variables.tf
 │   ├── main.tf
 │   ├── outputs.tf
@@ -291,11 +293,22 @@ aws-infrastructure-automation/
 │   ├── ec2.tf
 │   ├── alb.tf
 │   ├── ssm.tf
+│   ├── ansible_ssm.tf
 │   ├── s3_endpoint.tf
 │   └── ecr_endpoints.tf
 │
 ├── ansible/
-│   └── Server configuration and deployment
+│   ├── ansible.cfg
+│   ├── inventory/
+│   │   └── hosts.yml
+│   ├── site.yml
+│   ├── Dockerfile
+│   └── roles/
+│       ├── user_setup/
+│       ├── ssh_hardening/
+│       ├── system_config/
+│       ├── docker/
+│       └── security_hardening/
 │
 ├── app/
 │   └── Containerized application
@@ -312,7 +325,7 @@ aws-infrastructure-automation/
 └── .gitignore
 ```
 
-The directory structure will continue to evolve as Ansible, Docker, monitoring, and AI functionality are implemented.
+Ansible uses a role-based architecture so that individual configuration responsibilities remain isolated, reusable, and idempotent.
 
 ---
 
@@ -368,9 +381,13 @@ Implemented endpoints:
 * Amazon ECR Docker Registry interface endpoint
 * Amazon S3 Gateway endpoint
 
+An S3 bucket is also provisioned for Ansible's AWS Systems Manager connection mechanism.
+
 This allows the architecture to support private management and private container image access while keeping the application instance without a public IP.
 
-### Network Layout
+---
+
+## Network Layout
 
 ```text
 VPC
@@ -405,7 +422,7 @@ The S3 Gateway endpoint is associated with both private route tables, while inte
 
 ## Private Server Management
 
-Private EC2 management is designed around **AWS Systems Manager** rather than exposing SSH access directly to the public internet.
+Private EC2 management is designed around **AWS Systems Manager Session Manager** rather than exposing SSH access directly to the public internet.
 
 The architecture is:
 
@@ -431,7 +448,201 @@ This design removes the need for:
 * Public SSH access
 * SSH key distribution for routine server management
 
-Ansible will later integrate with the private management architecture as part of the server configuration workflow.
+Ansible integrates with this architecture using the `amazon.aws.aws_ssm` connection plugin.
+
+### Ansible over AWS SSM
+
+Ansible does not connect directly to the EC2 instance over SSH.
+
+Instead:
+
+```text
+Ansible Controller
+       │
+       ▼
+AWS SSM Connection Plugin
+       │
+       ▼
+AWS Systems Manager
+       │
+       ▼
+Private EC2
+```
+
+An S3 bucket is used by the Ansible SSM connection mechanism for transferring required execution data.
+
+This allows Ansible to configure the private EC2 instance without exposing an SSH port to the internet.
+
+---
+
+## Docker-Based Ansible Controller
+
+Ansible is executed from a **Docker-based controller** rather than directly from the macOS host.
+
+The controller image contains:
+
+* Python
+* Ansible Core
+* `amazon.aws`
+* `community.general`
+* `ansible.posix`
+* Boto3 / Botocore
+* AWS Systems Manager Session Manager Plugin
+
+Example:
+
+```bash
+docker build -t aws-infra-ansible ansible
+```
+
+Ansible playbooks are then executed through the container:
+
+```bash
+docker run --rm -it \
+  -v "$PWD/ansible:/workspace/ansible" \
+  -v "$HOME/.aws:/root/.aws" \
+  -e AWS_PROFILE=admin-1 \
+  -e AWS_DEFAULT_REGION=ap-south-1 \
+  aws-infra-ansible \
+  ansible-playbook \
+  -i /workspace/ansible/inventory/hosts.yml \
+  /workspace/ansible/site.yml
+```
+
+### Why Docker is used
+
+During development, the native macOS Ansible controller experienced worker-process crashes when using the AWS SSM connection plugin.
+
+The underlying AWS components themselves were verified independently:
+
+* AWS credentials and Boto3 access worked
+* AWS Systems Manager API access worked
+* S3 access worked
+* Session Manager Plugin worked
+* SSM sessions could be established successfully
+
+The instability occurred specifically within the native macOS Ansible worker execution path.
+
+Rather than weakening the infrastructure architecture or exposing SSH access as a workaround, the project uses a **Linux-based Docker Ansible controller**.
+
+This provides:
+
+* A reproducible Ansible execution environment
+* Linux-based process behavior for Ansible workers
+* Pinned Ansible and collection versions
+* Consistent dependencies
+* Isolation from the host Python environment
+* Reliable Ansible-over-SSM execution
+
+The Docker controller successfully executes the complete role-based playbook against the private EC2 instance.
+
+---
+
+## Ansible Configuration
+
+Ansible configuration is organized using independent roles:
+
+```text
+roles/
+├── user_setup/
+├── ssh_hardening/
+├── system_config/
+├── docker/
+└── security_hardening/
+```
+
+The main playbook orchestrates these roles:
+
+```yaml
+- name: Configure application servers
+  hosts: app_servers
+  become: true
+
+  roles:
+    - user_setup
+    - ssh_hardening
+    - system_config
+    - docker
+    - security_hardening
+```
+
+### User Configuration
+
+The `user_setup` role:
+
+* Creates the `deploy` user
+* Creates a home directory
+* Adds the user to the `wheel` group
+
+### SSH Hardening
+
+The `ssh_hardening` role:
+
+* Disables SSH root login
+* Disables SSH password authentication
+* Disables empty passwords
+* Validates the SSH configuration before applying changes
+
+SSH remains intentionally unavailable from the public internet.
+
+### System Configuration
+
+The `system_config` role:
+
+* Updates installed packages
+* Installs essential system utilities
+* Configures the system timezone
+* Creates `/opt/app`
+* Assigns application ownership to the deployment user
+
+### Docker Configuration
+
+The `docker` role:
+
+* Installs Docker
+* Adds the deployment user to the Docker group
+* Enables Docker at boot
+* Starts the Docker service
+
+Docker was successfully verified on the EC2 instance.
+
+### Security Hardening
+
+The `security_hardening` role applies kernel/network security settings using `ansible.posix.sysctl`.
+
+Implemented controls include:
+
+* Disable IPv4 forwarding
+* Disable IPv6 forwarding
+* Disable ICMP redirects
+* Disable secure ICMP redirects
+* Disable source routing
+* Enable reverse path filtering
+* Disable IPv4 ICMP redirects being sent
+
+The resulting configuration was verified directly on the EC2 instance:
+
+```text
+net.ipv4.ip_forward = 0
+net.ipv6.conf.all.forwarding = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.all.send_redirects = 0
+```
+
+The complete Ansible playbook currently executes successfully with:
+
+```text
+ok=19
+changed=7
+unreachable=0
+failed=0
+skipped=0
+rescued=0
+ignored=0
+```
 
 ---
 
@@ -457,79 +668,55 @@ This avoids making the application instance publicly accessible merely to retrie
 
 ---
 
-## Server Configuration
-
-Ansible will be responsible for configuration management after infrastructure provisioning.
-
-Planned responsibilities include:
-
-* Creating deployment users
-* Configuring secure server access
-* Installing Docker
-* Configuring Docker
-* Applying server configuration
-* Deploying the application
-* Configuring monitoring
-* Performing post-deployment validation
-
-Ansible roles will be designed to be **idempotent**, allowing configuration to be safely re-applied.
-
----
-
 ## Reproducibility
 
 A primary goal of this project is reproducibility.
 
-The intended final workflow is:
-
-```bash
-terraform init
-terraform plan
-terraform apply
-```
-
-followed by server configuration and deployment:
-
-```text
-Infrastructure
-      ↓
-Server Management
-      ↓
-Ansible Configuration
-      ↓
-Docker Deployment
-      ↓
-Application
-      ↓
-Health Check
-      ↓
-Running Environment
-```
-
-The infrastructure should be possible to recreate from the repository rather than relying on manually configured AWS resources.
-
-### Current Terraform validation
-
-The Terraform configuration can currently be initialized, formatted, validated, and planned without provisioning AWS resources.
-
-Example:
+The infrastructure can be initialized, formatted, validated, planned, and provisioned using Terraform:
 
 ```bash
 terraform -chdir=terraform init
 terraform -chdir=terraform fmt
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan
+terraform -chdir=terraform apply
 ```
 
-The latest validated plan is:
+Server configuration is then performed through the Docker-based Ansible controller:
 
 ```text
-Plan: 30 to add, 0 to change, 0 to destroy.
+Terraform
+    ↓
+AWS Infrastructure
+    ↓
+AWS Systems Manager
+    ↓
+Docker-based Ansible Controller
+    ↓
+Ansible Roles
+    ↓
+Server Configuration
+    ↓
+Docker
+    ↓
+Application
 ```
 
-**No AWS infrastructure has been provisioned yet.**
+The infrastructure is designed to be recreated from the repository rather than relying on manually configured AWS resources.
 
-This project intentionally follows a **plan-first workflow** during development. Infrastructure will only be applied during the controlled deployment stage.
+### Current Terraform deployment
+
+Terraform has been successfully applied to AWS.
+
+The infrastructure deployment completed successfully with:
+
+```text
+30 added
+0 changed
+0 destroyed
+```
+
+The resulting environment includes the VPC, networking, security groups, IAM resources, private EC2 instance, Application Load Balancer, and private AWS service connectivity.
 
 ---
 
@@ -548,6 +735,7 @@ The project follows principles such as:
 * Secrets kept outside version control
 * Environment-specific configuration
 * Explicit infrastructure changes through Terraform
+* Server hardening through Ansible
 * AI analysis separated from infrastructure execution
 
 The current architecture reflects these principles:
@@ -560,6 +748,8 @@ The current architecture reflects these principles:
 * Private subnets do not have a default internet route.
 * AWS Systems Manager provides the intended private management path.
 * ECR and S3 connectivity is provided through VPC endpoints.
+* SSH root login and password authentication are disabled.
+* Network forwarding and source-routing behavior are hardened through Ansible.
 * Sensitive files such as credentials, private keys, Terraform state files, and environment files are excluded from version control.
 
 ---
@@ -592,11 +782,11 @@ Private EC2
     └── S3 Gateway Endpoint
 ```
 
-This provides the required private service connectivity for the current architecture without introducing a permanent NAT Gateway into the portfolio environment.
+This provides the required private service connectivity for the current architecture without introducing a permanent NAT Gateway.
 
 Interface VPC endpoints do introduce AWS charges, so endpoint placement is intentionally limited to the private subnet currently hosting the EC2 instance where practical.
 
-The infrastructure will continue to be reviewed for cost before the complete environment is deployed.
+The infrastructure will continue to be reviewed for cost before additional services are introduced.
 
 ---
 
@@ -649,7 +839,7 @@ Portfolio & Documentation
 
 Each stage is validated before moving to the next stage.
 
-The Terraform workflow currently emphasizes:
+The Terraform workflow emphasizes:
 
 ```text
 Implement
@@ -662,60 +852,107 @@ terraform plan
    ↓
 Review
    ↓
+terraform apply
+   ↓
+Validate AWS resources
+   ↓
 Commit
    ↓
 Push
 ```
 
-No infrastructure is provisioned merely as part of the development workflow.
+The Ansible workflow emphasizes:
+
+```text
+Implement Role
+      ↓
+Build Controller
+      ↓
+Execute via AWS SSM
+      ↓
+Validate Configuration
+      ↓
+Review
+      ↓
+Commit
+      ↓
+Push
+```
 
 ---
 
 ## Current Stage
 
-### Stage 5.4 — Private Service Connectivity ✅
+### Stage 6 — Ansible Configuration ✅
 
 Completed:
 
-* VPC networking foundation
-* Public and private subnets
-* Route tables
-* Internet Gateway
-* Security groups
-* EC2 IAM role and instance profile
-* Amazon Linux 2023 EC2 instance
-* Private EC2 placement
-* No public EC2 IP
-* Application Load Balancer
-* ALB target group
-* Application health check
-* AWS Systems Manager interface endpoint
-* AWS Systems Manager Messages interface endpoint
-* Amazon ECR API interface endpoint
-* Amazon ECR Docker Registry interface endpoint
-* Amazon S3 Gateway endpoint
-* Private application traffic through ALB security-group relationships
-* Terraform formatting and validation
-* Terraform plan validation
-* Git-based incremental implementation
+* Docker-based Ansible controller
+* Pinned Ansible Core and Ansible collection versions
+* AWS SSM Ansible connection
+* S3 transfer bucket for Ansible SSM
+* Role-based Ansible architecture
+* Deployment user creation
+* SSH hardening
+* System package configuration
+* System timezone configuration
+* Application directory creation
+* Docker installation
+* Docker service configuration
+* Docker group configuration
+* Kernel/network security hardening
+* Successful end-to-end Ansible execution over AWS Systems Manager
+* Verification of all security hardening parameters
 
-Latest Terraform plan:
+Latest successful Ansible execution:
 
 ```text
-Plan: 30 to add, 0 to change, 0 to destroy.
+PLAY RECAP
+
+app : ok=19
+      changed=7
+      unreachable=0
+      failed=0
+      skipped=0
+      rescued=0
+      ignored=0
 ```
 
-No AWS infrastructure has been provisioned yet.
+Security hardening was subsequently verified directly on the EC2 instance.
 
-### Git Status
+### Infrastructure Status
 
-The completed infrastructure stages have been committed and pushed to GitHub.
+The AWS infrastructure is currently provisioned and operational for the implemented stages.
 
-Latest infrastructure commit:
+The environment includes:
 
 ```text
-c096750 feat: add private service connectivity
+VPC
+ ├── Public Subnets
+ │    └── Application Load Balancer
+ │
+ └── Private Subnets
+      ├── EC2
+      ├── SSM Endpoints
+      ├── ECR Endpoints
+      └── S3 Gateway Endpoint
 ```
+
+The EC2 instance is managed privately through AWS Systems Manager.
+
+### Upcoming
+
+* Docker-based application deployment
+* Application container deployment
+* Monitoring and validation
+* Reproducible end-to-end automation workflow
+* Controlled deployment workflow
+* AI Infrastructure Copilot
+* Terraform plan analysis
+* Infrastructure security recommendations
+* Infrastructure explanation
+* Failure analysis and troubleshooting
+* Portfolio documentation and demonstration
 
 ---
 
@@ -733,25 +970,20 @@ c096750 feat: add private service connectivity
 * Stage 5.2 — Application Load Balancer
 * Stage 5.3 — Private SSM Management
 * Stage 5.4 — Private Service Connectivity
+* Stage 6 — Ansible Configuration
 
 ### Current focus
 
-* Preparing the infrastructure foundation for Ansible-based server configuration
+* Preparing Docker-based application deployment on the private EC2 instance
 
 ### Upcoming
 
-* Ansible configuration
-* Docker installation and deployment
-* Application deployment
-* Monitoring and validation
-* Reproducible automation workflow
-* Controlled AWS deployment
-* AI Infrastructure Copilot
-* Terraform plan analysis
-* Infrastructure security recommendations
-* Infrastructure explanation
-* Failure analysis and troubleshooting
-* Portfolio documentation and demonstration
+* Stage 7 — Docker Deployment
+* Stage 8 — Monitoring & Validation
+* Stage 9 — Reproducible Automation
+* Stage 10 — AI Infrastructure Copilot
+* Stage 11 — AI Explain & Failure Analysis
+* Stage 12 — Portfolio & Documentation
 
 ---
 

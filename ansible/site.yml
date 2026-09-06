@@ -1,0 +1,11 @@
+---
+- name: Configure application servers
+  hosts: app_servers
+  become: true
+
+  roles:
+    - user_setup
+    - ssh_hardening
+    - system_config
+    - docker
+    - security_hardening
