@@ -1,0 +1,17 @@
+2026-09-08T10:15:32Z ERROR deployment failed
+Application container exited immediately after startup.
+
+Container status:
+Exited (1)
+
+Application logs:
+Error: failed to pull image
+repository: aws-infrastructure-app
+registry: 977237383271.dkr.ecr.ap-south-1.amazonaws.com
+reason: no basic auth credentials
+
+Deployment stage:
+Docker image pull
+
+Expected behavior:
+EC2 should authenticate with Amazon ECR and pull the application image.

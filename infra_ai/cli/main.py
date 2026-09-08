@@ -1,10 +1,13 @@
 import argparse
 from pathlib import Path
 
+from infra_ai.troubleshoot.troubleshooter import troubleshoot_file
 from infra_ai.ai.openai import OpenAIProvider
 from infra_ai.analyzer.analyzer import analyze_resources
 from infra_ai.analyzer.test_data import get_controlled_findings
 from infra_ai.analyzer.terraform import TerraformAnalyzer
+from infra_ai.explain.explainer import explain_file
+from infra_ai.inputs.files import read_text_file
 from infra_ai.reporting.report import render_report
 
 
@@ -56,6 +59,66 @@ def analyze(use_ai: bool = False, test_mode: bool = False) -> None:
         print("-----------")
         print(analysis)
 
+def explain_file_command(file_path: str) -> None:
+    """Explain an infrastructure-related file using AI."""
+
+    try:
+        content = read_text_file(file_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print("Infrastructure Explanation")
+        print("--------------------------")
+        print(f"Error: {exc}")
+        return
+
+    print("Infrastructure Explanation")
+    print("--------------------------")
+    print(f"File: {file_path}")
+    print()
+
+    try:
+        provider = OpenAIProvider()
+        explanation = explain_file(
+            provider=provider,
+            file_path=file_path,
+            content=content,
+        )
+    except RuntimeError as exc:
+        print("Unable to generate AI explanation.")
+        print(f"Error: {exc}")
+        return
+
+    print(explanation)
+
+def troubleshoot_file_command(file_path: str) -> None:
+    """Troubleshoot an infrastructure or deployment diagnostic file using AI."""
+
+    try:
+        content = read_text_file(file_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print("Infrastructure Troubleshooting")
+        print("-------------------------------")
+        print(f"Error: {exc}")
+        return
+
+    print("Infrastructure Troubleshooting")
+    print("-------------------------------")
+    print(f"File: {file_path}")
+    print()
+
+    try:
+        provider = OpenAIProvider()
+        analysis = troubleshoot_file(
+            provider=provider,
+            file_path=file_path,
+            content=content,
+        )
+    except RuntimeError as exc:
+        print("Unable to generate AI troubleshooting analysis.")
+        print(f"Error: {exc}")
+        return
+
+    print(analysis)
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="infra-ai",
@@ -81,6 +144,26 @@ def main() -> None:
         help="Use controlled findings for AI integration testing.",
     )
 
+    explain_parser = subparsers.add_parser(
+        "explain",
+        help="Explain an infrastructure-related file using AI.",
+    )
+
+    explain_parser.add_argument(
+        "file",
+        help="Path to the infrastructure file to explain.",
+    )
+
+    troubleshoot_parser = subparsers.add_parser(
+        "troubleshoot",
+        help="Troubleshoot an infrastructure or deployment diagnostic file using AI.",
+    )
+
+    troubleshoot_parser.add_argument(
+        "file",
+        help="Path to the diagnostic file to troubleshoot.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "analyze":
@@ -91,9 +174,15 @@ def main() -> None:
             use_ai=args.ai,
             test_mode=args.test,
         )
+
+    elif args.command == "explain":
+        explain_file_command(args.file)
+
+    elif args.command == "troubleshoot":
+        troubleshoot_file_command(args.file)
+
     else:
         parser.print_help()
-
 
 if __name__ == "__main__":
     main()
