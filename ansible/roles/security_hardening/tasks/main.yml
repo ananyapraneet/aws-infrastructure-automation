@@ -1,9 +1,9 @@
 ---
 
-- name: Disable IP forwarding
+- name: Enable IP forwarding for Docker networking
   ansible.posix.sysctl:
     name: net.ipv4.ip_forward
-    value: "0"
+    value: "1"
     state: present
     reload: true
 

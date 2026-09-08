@@ -32,3 +32,8 @@ output "ansible_ssm_bucket_name" {
   description = "S3 bucket used by Ansible SSM for module transfers"
   value       = aws_s3_bucket.ansible_ssm.id
 }
+
+output "ecr_repository_url" {
+  description = "ECR repository URL for the application image"
+  value       = aws_ecr_repository.app.repository_url
+}

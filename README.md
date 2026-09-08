@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Reproducible AWS infrastructure provisioning and server configuration using **Terraform, Ansible, Docker, and AI-assisted infrastructure analysis**.
+Reproducible AWS infrastructure provisioning, server configuration, application deployment, and infrastructure analysis using **Terraform, Ansible, Docker, Amazon ECR, and AI-assisted infrastructure analysis**.
 
 ## Overview
 
@@ -12,8 +12,9 @@ The project combines:
 
 * **Terraform** for infrastructure provisioning
 * **Ansible** for server configuration and configuration management
-* **Docker** for application deployment and Ansible controller isolation
-* **AWS** for cloud infrastructure
+* **Docker** for application containerization and Ansible controller isolation
+* **Amazon ECR** for private container image storage
+* **AWS** for cloud infrastructure and managed connectivity
 * **AI Infrastructure Copilot** for infrastructure analysis, security recommendations, configuration explanations, and failure analysis
 
 The primary goal is to make infrastructure **reproducible, automated, explainable, secure, and cost-conscious**.
@@ -22,7 +23,7 @@ The primary goal is to make infrastructure **reproducible, automated, explainabl
 
 ## Architecture
 
-The infrastructure follows a layered architecture that separates public traffic, private application compute, server management, and infrastructure automation.
+The infrastructure follows a layered architecture that separates public traffic, private application compute, private container image access, server management, and infrastructure automation.
 
 ```text
                               Internet
@@ -44,7 +45,7 @@ The infrastructure follows a layered architecture that separates public traffic,
                     │                        │
                     │       Docker           │
                     │          │             │
-                    │     Application        │
+                    │   Application :8000    │
                     └──────────┬─────────────┘
                                │
               ┌────────────────┼────────────────┐
@@ -59,17 +60,16 @@ The infrastructure follows a layered architecture that separates public traffic,
                        AWS Private Services
 
 
-        Terraform
+        Local / CI
             │
-            │ Provision
+            │ Docker Build
             ▼
-     AWS Infrastructure
+          Amazon ECR
             │
-            │ Configure
+            │ Private Pull
             ▼
-         Ansible
+       Private EC2
             │
-            │ Deploy
             ▼
           Docker
             │
@@ -89,7 +89,7 @@ The infrastructure follows a layered architecture that separates public traffic,
    Analysis  Analysis     Analysis
 ```
 
-The infrastructure is implemented incrementally using Terraform and Ansible, with Docker providing an isolated and reproducible automation environment.
+The infrastructure is implemented incrementally using Terraform and Ansible, with Docker providing isolated and reproducible automation environments.
 
 ### Current implementation
 
@@ -105,6 +105,7 @@ The Terraform foundation currently includes:
 * Internet-facing Application Load Balancer
 * ALB target group and health check
 * AWS Systems Manager private connectivity
+* Amazon ECR repository
 * ECR private connectivity
 * S3 Gateway VPC endpoint
 * S3 bucket used by Ansible's AWS Systems Manager connection
@@ -135,7 +136,7 @@ The AI layer is intentionally **read-only with respect to infrastructure changes
 
 ## Core Workflow
 
-The target deployment workflow is:
+The implemented deployment workflow is:
 
 ```text
 Terraform
@@ -150,6 +151,7 @@ Provision AWS infrastructure
     ├── IAM
     ├── EC2
     ├── Load Balancer
+    ├── ECR
     └── Private Service Endpoints
     │
     ▼
@@ -161,22 +163,25 @@ Ansible
     ├── Install Docker
     ├── Configure Docker
     ├── Apply security hardening
-    └── Validate server
+    └── Deploy application
     │
     ▼
-Docker
+Amazon ECR
     │
     ▼
-Deploy Application
+Private EC2
     │
     ▼
-Post-Deployment Validation
+Docker Application Container
     │
     ▼
-Running Application
+ALB
+    │
+    ▼
+Health Validation
 ```
 
-The final project will provide a simplified interface for executing these workflows.
+The project is being developed toward a simplified interface for executing these workflows.
 
 Example:
 
@@ -186,6 +191,103 @@ make configure
 make deploy
 make validate
 ```
+
+---
+
+## Docker Application Deployment
+
+The application layer is intentionally small because the primary focus of Project 3 is infrastructure automation rather than application development.
+
+The application is a lightweight Flask service exposing:
+
+```text
+GET /
+GET /health
+```
+
+The health endpoint returns:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+### Application architecture
+
+The application deployment flow is:
+
+```text
+Local / CI
+    │
+    │ docker build
+    ▼
+Docker Image
+    │
+    │ docker push
+    ▼
+Amazon ECR
+    │
+    │ Private ECR connectivity
+    ▼
+Private EC2
+    │
+    │ Docker pull
+    ▼
+Application Container
+    │
+    │ :8000
+    ▼
+Application Load Balancer
+    │
+    ▼
+/health
+```
+
+The EC2 instance does **not** build the application image.
+
+This is intentional because the EC2 instance resides in a private subnet without a NAT Gateway or general internet access.
+
+Instead, the image is built externally and stored in Amazon ECR. The private EC2 instance retrieves the image through the ECR API and Docker Registry VPC endpoints.
+
+### Container security
+
+The application Docker image:
+
+* Uses `python:3.12-slim`
+* Runs as a non-root `app` user
+* Exposes port `8000`
+* Includes a Docker health check
+* Uses `PYTHONDONTWRITEBYTECODE=1`
+* Uses `PYTHONUNBUFFERED=1`
+
+The container was locally validated before deployment.
+
+The running EC2 container was subsequently verified through AWS Systems Manager with:
+
+```text
+Docker container: running
+Docker health: healthy
+Application /health: healthy
+```
+
+### Amazon ECR
+
+The project provisions an Amazon ECR repository using Terraform.
+
+The repository is configured with:
+
+* Immutable image tags
+* Scan-on-push image scanning
+* AES256 encryption
+
+The EC2 IAM role includes:
+
+```text
+AmazonEC2ContainerRegistryReadOnly
+```
+
+This allows the application server to retrieve images without granting unnecessary ECR write permissions.
 
 ---
 
@@ -264,7 +366,8 @@ The AI layer will be designed to support **local, zero-cost execution** where pr
 | Infrastructure as Code   | Terraform              |
 | Configuration Management | Ansible                |
 | Containerization         | Docker                 |
-| Application              | Python                 |
+| Container Registry       | Amazon ECR             |
+| Application              | Python / Flask         |
 | Infrastructure AI        | Local LLM / AI tooling |
 | Automation               | Make                   |
 | Version Control          | Git / GitHub           |
@@ -274,7 +377,7 @@ The AI layer will be designed to support **local, zero-cost execution** where pr
 
 ## Project Structure
 
-The repository is organized around clear infrastructure and automation responsibilities:
+The repository is organized around clear infrastructure, configuration, deployment, and automation responsibilities:
 
 ```text
 aws-infrastructure-automation/
@@ -292,9 +395,9 @@ aws-infrastructure-automation/
 │   ├── iam.tf
 │   ├── ec2.tf
 │   ├── alb.tf
-│   ├── ssm.tf
 │   ├── ansible_ssm.tf
 │   ├── s3_endpoint.tf
+│   ├── ecr.tf
 │   └── ecr_endpoints.tf
 │
 ├── ansible/
@@ -308,10 +411,13 @@ aws-infrastructure-automation/
 │       ├── ssh_hardening/
 │       ├── system_config/
 │       ├── docker/
-│       └── security_hardening/
+│       ├── security_hardening/
+│       └── application/
 │
 ├── app/
-│   └── Containerized application
+│   ├── app.py
+│   ├── requirements.txt
+│   └── Dockerfile
 │
 ├── infra-ai/
 │   └── AI Infrastructure Copilot
@@ -325,7 +431,7 @@ aws-infrastructure-automation/
 └── .gitignore
 ```
 
-Ansible uses a role-based architecture so that individual configuration responsibilities remain isolated, reusable, and idempotent.
+Ansible uses a role-based architecture so that individual configuration and deployment responsibilities remain isolated, reusable, and idempotent.
 
 ---
 
@@ -350,6 +456,7 @@ Ansible uses a role-based architecture so that individual configuration responsi
 * EC2 IAM role
 * EC2 instance profile
 * AWS Systems Manager managed-instance permissions
+* Amazon ECR read-only permissions
 
 #### Compute
 
@@ -368,6 +475,14 @@ Ansible uses a role-based architecture so that individual configuration responsi
 * Port `8000` target configuration
 * `/health` health check
 * ALB-to-EC2 security-group relationship
+
+#### Container Registry
+
+* Amazon ECR repository
+* Immutable image tags
+* Scan-on-push enabled
+* AES256 repository encryption
+* EC2 read-only ECR permissions
 
 #### Private Service Connectivity
 
@@ -395,9 +510,11 @@ VPC
 │
 ├── Public Subnet A
 │   └── 10.0.1.0/24
+│       └── Application Load Balancer
 │
 ├── Public Subnet B
 │   └── 10.0.2.0/24
+│       └── Application Load Balancer
 │
 ├── Private Subnet A
 │   └── 10.0.11.0/24
@@ -486,7 +603,9 @@ The controller image contains:
 * `amazon.aws`
 * `community.general`
 * `ansible.posix`
+* `community.docker`
 * Boto3 / Botocore
+* AWS CLI
 * AWS Systems Manager Session Manager Plugin
 
 Example:
@@ -548,7 +667,8 @@ roles/
 ├── ssh_hardening/
 ├── system_config/
 ├── docker/
-└── security_hardening/
+├── security_hardening/
+└── application/
 ```
 
 The main playbook orchestrates these roles:
@@ -564,6 +684,7 @@ The main playbook orchestrates these roles:
     - system_config
     - docker
     - security_hardening
+    - application
 ```
 
 ### User Configuration
@@ -612,7 +733,7 @@ The `security_hardening` role applies kernel/network security settings using `an
 
 Implemented controls include:
 
-* Disable IPv4 forwarding
+* Enable IPv4 forwarding for Docker networking
 * Disable IPv6 forwarding
 * Disable ICMP redirects
 * Disable secure ICMP redirects
@@ -620,10 +741,12 @@ Implemented controls include:
 * Enable reverse path filtering
 * Disable IPv4 ICMP redirects being sent
 
+IPv4 forwarding is intentionally enabled because Docker's published application port requires kernel packet forwarding for traffic arriving through the EC2 network interface to reach the container.
+
 The resulting configuration was verified directly on the EC2 instance:
 
 ```text
-net.ipv4.ip_forward = 0
+net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 0
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.secure_redirects = 0
@@ -632,16 +755,98 @@ net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.all.send_redirects = 0
 ```
 
-The complete Ansible playbook currently executes successfully with:
+The complete Ansible playbook executes successfully with:
 
 ```text
-ok=19
-changed=7
+ok=23
+changed=4
 unreachable=0
 failed=0
 skipped=0
 rescued=0
 ignored=0
+```
+
+---
+
+## Application Deployment Role
+
+The `application` Ansible role is responsible for deploying the containerized application to the private EC2 instance.
+
+The deployment flow is:
+
+```text
+Ansible Controller
+       │
+       │ AWS CLI
+       ▼
+Amazon ECR
+       │
+       │ Docker image
+       ▼
+Private EC2
+       │
+       ▼
+Docker
+       │
+       ▼
+aws-infra-app
+```
+
+The role:
+
+* Authenticates Docker to Amazon ECR
+* Pulls the specified application image
+* Removes an existing application container
+* Starts the requested application image
+* Configures the container to restart automatically
+
+The application image is identified using an explicit image tag rather than relying on mutable tags such as `latest`.
+
+This makes deployments reproducible and allows a specific image version to be rolled out deliberately.
+
+### Deployment validation
+
+The application deployment was validated through AWS Systems Manager.
+
+The resulting EC2 state was:
+
+```text
+Application container: running
+Docker health status: healthy
+Application endpoint: healthy
+```
+
+The final external validation was performed through the Application Load Balancer:
+
+```bash
+curl -i \
+  http://<alb-dns-name>/health
+```
+
+The ALB successfully returned:
+
+```text
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"status":"healthy"}
+```
+
+This confirms the complete traffic path:
+
+```text
+Internet
+   ↓
+Application Load Balancer
+   ↓
+Private EC2 :8000
+   ↓
+Docker
+   ↓
+Flask Application
+   ↓
+/health
 ```
 
 ---
@@ -666,6 +871,8 @@ The ECR interface endpoints provide private access to ECR APIs and Docker regist
 
 This avoids making the application instance publicly accessible merely to retrieve container images.
 
+The EC2 instance does not need direct internet access to retrieve the application image.
+
 ---
 
 ## Reproducibility
@@ -682,7 +889,7 @@ terraform -chdir=terraform plan
 terraform -chdir=terraform apply
 ```
 
-Server configuration is then performed through the Docker-based Ansible controller:
+Server configuration and application deployment are then performed through the Docker-based Ansible controller:
 
 ```text
 Terraform
@@ -697,6 +904,8 @@ Ansible Roles
     ↓
 Server Configuration
     ↓
+Amazon ECR
+    ↓
 Docker
     ↓
 Application
@@ -704,11 +913,11 @@ Application
 
 The infrastructure is designed to be recreated from the repository rather than relying on manually configured AWS resources.
 
-### Current Terraform deployment
+### Terraform deployment
 
-Terraform has been successfully applied to AWS.
+Terraform has been successfully applied to AWS multiple times as the infrastructure was implemented incrementally.
 
-The infrastructure deployment completed successfully with:
+The initial infrastructure deployment completed successfully with:
 
 ```text
 30 added
@@ -716,7 +925,9 @@ The infrastructure deployment completed successfully with:
 0 destroyed
 ```
 
-The resulting environment includes the VPC, networking, security groups, IAM resources, private EC2 instance, Application Load Balancer, and private AWS service connectivity.
+Subsequent Terraform changes added the ECR repository and required IAM permissions.
+
+The resulting environment includes the VPC, networking, security groups, IAM resources, private EC2 instance, Application Load Balancer, ECR, and private AWS service connectivity.
 
 ---
 
@@ -749,7 +960,9 @@ The current architecture reflects these principles:
 * AWS Systems Manager provides the intended private management path.
 * ECR and S3 connectivity is provided through VPC endpoints.
 * SSH root login and password authentication are disabled.
-* Network forwarding and source-routing behavior are hardened through Ansible.
+* Source routing and ICMP redirect behavior are hardened through Ansible.
+* IPv4 forwarding is enabled specifically to support Docker's published application port.
+* The EC2 instance has read-only access to ECR.
 * Sensitive files such as credentials, private keys, Terraform state files, and environment files are excluded from version control.
 
 ---
@@ -872,6 +1085,10 @@ Execute via AWS SSM
       ↓
 Validate Configuration
       ↓
+Deploy Application
+      ↓
+Validate Application
+      ↓
 Review
       ↓
 Commit
@@ -883,42 +1100,51 @@ Push
 
 ## Current Stage
 
-### Stage 6 — Ansible Configuration ✅
+### Stage 7 — Docker Application Deployment ✅
 
 Completed:
 
-* Docker-based Ansible controller
-* Pinned Ansible Core and Ansible collection versions
-* AWS SSM Ansible connection
-* S3 transfer bucket for Ansible SSM
-* Role-based Ansible architecture
-* Deployment user creation
-* SSH hardening
-* System package configuration
-* System timezone configuration
-* Application directory creation
-* Docker installation
-* Docker service configuration
-* Docker group configuration
-* Kernel/network security hardening
-* Successful end-to-end Ansible execution over AWS Systems Manager
-* Verification of all security hardening parameters
+* Lightweight Flask application
+* Application Dockerfile
+* Non-root application container
+* Docker health check
+* Amazon ECR repository
+* Immutable ECR image tags
+* ECR scan-on-push
+* ECR AES256 encryption
+* EC2 ECR read-only IAM permissions
+* Private ECR connectivity
+* Application Ansible role
+* ECR authentication through the Docker-based Ansible controller
+* Private EC2 image pull
+* Docker application container deployment
+* Automatic container restart configuration
+* Docker container health validation
+* ALB target health validation
+* External ALB `/health` validation
+* End-to-end application traffic validation
 
-Latest successful Ansible execution:
+Final external validation:
 
 ```text
-PLAY RECAP
+HTTP/1.1 200 OK
 
-app : ok=19
-      changed=7
-      unreachable=0
-      failed=0
-      skipped=0
-      rescued=0
-      ignored=0
+{"status":"healthy"}
 ```
 
-Security hardening was subsequently verified directly on the EC2 instance.
+This confirms successful application delivery through:
+
+```text
+Internet
+    ↓
+Application Load Balancer
+    ↓
+Private EC2
+    ↓
+Docker
+    ↓
+Flask Application
+```
 
 ### Infrastructure Status
 
@@ -940,10 +1166,10 @@ VPC
 
 The EC2 instance is managed privately through AWS Systems Manager.
 
+The application is deployed as a Docker container on the private EC2 instance and is accessible externally through the Application Load Balancer.
+
 ### Upcoming
 
-* Docker-based application deployment
-* Application container deployment
 * Monitoring and validation
 * Reproducible end-to-end automation workflow
 * Controlled deployment workflow
@@ -971,14 +1197,14 @@ The EC2 instance is managed privately through AWS Systems Manager.
 * Stage 5.3 — Private SSM Management
 * Stage 5.4 — Private Service Connectivity
 * Stage 6 — Ansible Configuration
+* Stage 7 — Docker Application Deployment
 
 ### Current focus
 
-* Preparing Docker-based application deployment on the private EC2 instance
+* Monitoring and validation
 
 ### Upcoming
 
-* Stage 7 — Docker Deployment
 * Stage 8 — Monitoring & Validation
 * Stage 9 — Reproducible Automation
 * Stage 10 — AI Infrastructure Copilot

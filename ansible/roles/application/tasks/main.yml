@@ -1,0 +1,26 @@
+---
+- name: Log in to Amazon ECR
+  community.docker.docker_login:
+    registry_url: "{{ ecr_repository_url }}"
+    username: AWS
+    password: "{{ lookup('pipe', 'aws ecr get-login-password --region ' ~ aws_region) }}"
+    reauthorize: true
+
+- name: Pull application image
+  community.docker.docker_image:
+    name: "{{ ecr_repository_url }}:{{ image_tag }}"
+    source: pull
+
+- name: Stop existing application container
+  community.docker.docker_container:
+    name: aws-infra-app
+    state: absent
+
+- name: Start application container
+  community.docker.docker_container:
+    name: aws-infra-app
+    image: "{{ ecr_repository_url }}:{{ image_tag }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "8000:8000"
