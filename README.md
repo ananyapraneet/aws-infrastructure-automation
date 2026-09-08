@@ -2,11 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Reproducible AWS infrastructure provisioning, server configuration, application deployment, and infrastructure analysis using **Terraform, Ansible, Docker, Amazon ECR, and AI-assisted infrastructure analysis**.
+Reproducible AWS infrastructure provisioning, server configuration, application deployment, infrastructure validation, and infrastructure analysis using **Terraform, Ansible, Docker, Amazon ECR, and AI-assisted infrastructure analysis**.
 
 ## Overview
 
-**AWS Infrastructure Automation** is a DevOps/SRE-focused infrastructure automation platform designed to provision, configure, deploy, and validate a complete application environment on AWS.
+**AWS Infrastructure Automation** is a DevOps/SRE-focused infrastructure automation platform designed to provision, configure, deploy, validate, and analyze a complete application environment on AWS.
 
 The project combines:
 
@@ -17,13 +17,13 @@ The project combines:
 * **AWS** for cloud infrastructure and managed connectivity
 * **AI Infrastructure Copilot** for infrastructure analysis, security recommendations, configuration explanations, and failure analysis
 
-The primary goal is to make infrastructure **reproducible, automated, explainable, secure, and cost-conscious**.
+The primary goal is to make infrastructure **reproducible, automated, validated, explainable, secure, and cost-conscious**.
 
 ---
 
 ## Architecture
 
-The infrastructure follows a layered architecture that separates public traffic, private application compute, private container image access, server management, and infrastructure automation.
+The infrastructure follows a layered architecture that separates public traffic, private application compute, private container image access, server management, infrastructure automation, and validation.
 
 ```text
                               Internet
@@ -75,6 +75,33 @@ The infrastructure follows a layered architecture that separates public traffic,
             │
             ▼
        Application
+
+
+      Ansible Controller
+        Docker Container
+             │
+             │ AWS SSM
+             ▼
+        Private EC2
+             │
+             ▼
+      Server Configuration
+             │
+             ▼
+      Application Deployment
+             │
+             ▼
+       Validation Role
+        ┌────┴───────────────┐
+        │                    │
+        ▼                    ▼
+   EC2 Validation       ALB Validation
+                              │
+                              ▼
+                       Internet → ALB
+                              │
+                              ▼
+                       Private EC2
 
 
       Terraform Plan
@@ -136,7 +163,7 @@ The AI layer is intentionally **read-only with respect to infrastructure changes
 
 ## Core Workflow
 
-The implemented deployment workflow is:
+The implemented deployment and validation workflow is:
 
 ```text
 Terraform
@@ -155,7 +182,10 @@ Provision AWS infrastructure
     └── Private Service Endpoints
     │
     ▼
-Ansible
+Docker-based Ansible Controller
+    │
+    ▼
+Ansible over AWS SSM
     │
     ├── Configure users
     ├── Configure secure server access
@@ -175,10 +205,17 @@ Private EC2
 Docker Application Container
     │
     ▼
-ALB
+Validation
+    │
+    ├── Server validation
+    ├── Docker validation
+    ├── Application validation
+    ├── Image validation
+    ├── Deployment validation
+    └── ALB validation
     │
     ▼
-Health Validation
+PASS / FAIL
 ```
 
 The project is being developed toward a simplified interface for executing these workflows.
@@ -377,7 +414,7 @@ The AI layer will be designed to support **local, zero-cost execution** where pr
 
 ## Project Structure
 
-The repository is organized around clear infrastructure, configuration, deployment, and automation responsibilities:
+The repository is organized around clear infrastructure, configuration, deployment, validation, and automation responsibilities:
 
 ```text
 aws-infrastructure-automation/
@@ -412,7 +449,8 @@ aws-infrastructure-automation/
 │       ├── system_config/
 │       ├── docker/
 │       ├── security_hardening/
-│       └── application/
+│       ├── application/
+│       └── validation/
 │
 ├── app/
 │   ├── app.py
@@ -431,7 +469,7 @@ aws-infrastructure-automation/
 └── .gitignore
 ```
 
-Ansible uses a role-based architecture so that individual configuration and deployment responsibilities remain isolated, reusable, and idempotent.
+Ansible uses a role-based architecture so that individual configuration, deployment, and validation responsibilities remain isolated, reusable, and idempotent.
 
 ---
 
@@ -618,7 +656,7 @@ Ansible playbooks are then executed through the container:
 
 ```bash
 docker run --rm -it \
-  -v "$PWD/ansible:/workspace/ansible" \
+  -v "$PWD:/workspace" \
   -v "$HOME/.aws:/root/.aws" \
   -e AWS_PROFILE=admin-1 \
   -e AWS_DEFAULT_REGION=ap-south-1 \
@@ -668,7 +706,8 @@ roles/
 ├── system_config/
 ├── docker/
 ├── security_hardening/
-└── application/
+├── application/
+└── validation/
 ```
 
 The main playbook orchestrates these roles:
@@ -685,6 +724,7 @@ The main playbook orchestrates these roles:
     - docker
     - security_hardening
     - application
+    - validation
 ```
 
 ### User Configuration
@@ -753,18 +793,6 @@ net.ipv4.conf.all.secure_redirects = 0
 net.ipv4.conf.all.accept_source_route = 0
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.all.send_redirects = 0
-```
-
-The complete Ansible playbook executes successfully with:
-
-```text
-ok=23
-changed=4
-unreachable=0
-failed=0
-skipped=0
-rescued=0
-ignored=0
 ```
 
 ---
@@ -851,6 +879,197 @@ Flask Application
 
 ---
 
+## Monitoring & Validation
+
+Stage 8 introduces a dedicated **Ansible validation role** that verifies the deployed infrastructure and application state after configuration and deployment.
+
+The validation architecture is:
+
+```text
+Infrastructure
+      ↓
+Server Validation
+      ↓
+Docker Validation
+      ↓
+Application Validation
+      ↓
+Deployment Validation
+      ↓
+ALB Validation
+      ↓
+PASS / FAIL
+```
+
+The validation role is intentionally focused on **automated correctness checks** rather than introducing a full observability stack such as Prometheus or Grafana at this stage.
+
+### Validation role
+
+The role is structured as:
+
+```text
+ansible/roles/validation/
+├── tasks/
+│   └── main.yml
+└── handlers/
+    └── main.yml
+```
+
+It is executed after application deployment:
+
+```yaml
+roles:
+  - user_setup
+  - ssh_hardening
+  - system_config
+  - docker
+  - security_hardening
+  - application
+  - validation
+```
+
+### Server validation
+
+The validation role verifies:
+
+* Expected operating system
+* Docker service state
+* Docker service enabled status
+* IPv4 forwarding required for Docker networking
+* Application port availability
+
+The expected operating system is Amazon Linux.
+
+### Docker validation
+
+The role verifies:
+
+* Application container exists
+* Application container is running
+* Container restart policy is `unless-stopped`
+* Container is using the expected ECR image
+* Docker health status becomes `healthy`
+
+The health validation includes a retry mechanism so that the role does not incorrectly fail immediately after a newly deployed container starts.
+
+This accounts for the normal startup period required for the application's Docker health check.
+
+### Application validation
+
+The application itself is validated through:
+
+```text
+http://127.0.0.1:8000/health
+```
+
+The validation requires:
+
+```text
+HTTP 200
+status = healthy
+```
+
+This verifies that the application process is not merely running but is responding correctly.
+
+### Deployment validation
+
+The validation role also verifies that:
+
+* The expected ECR image exists locally on the EC2 instance
+* The running container uses the expected image
+* The running container image ID matches the deployed image
+
+This provides an additional deployment-integrity check beyond simply confirming that a container is running.
+
+### ALB validation
+
+The ALB validation is deliberately executed from the **Ansible controller**, not from the private EC2 instance.
+
+The validation path is:
+
+```text
+Ansible Controller
+        │
+        ▼
+     Internet
+        │
+        ▼
+ Application Load Balancer
+        │
+        ▼
+ Private EC2
+        │
+        ▼
+ Docker Application
+```
+
+This is important because the private EC2 instance intentionally does not have general internet egress or a NAT Gateway.
+
+The Ansible task therefore uses controller-side execution:
+
+```yaml
+delegate_to: localhost
+run_once: true
+```
+
+The ALB health check validates:
+
+```text
+HTTP 200
+status = healthy
+```
+
+This confirms that the complete externally accessible application path is operational.
+
+### Final Stage 8 validation
+
+The complete Ansible playbook was executed successfully after implementing the validation role.
+
+Final result:
+
+```text
+PLAY RECAP
+
+app : ok=44
+      changed=3
+      unreachable=0
+      failed=0
+      skipped=0
+      rescued=0
+      ignored=0
+```
+
+All validation categories passed:
+
+```text
+✓ Amazon Linux validation
+✓ Docker service running
+✓ Docker service enabled
+✓ IPv4 forwarding enabled
+✓ Application port available
+✓ Application container exists
+✓ Application container running
+✓ Restart policy validated
+✓ Expected image validated
+✓ Docker health check passed
+✓ Application /health passed
+✓ Deployed image exists locally
+✓ Running container matches deployed image
+✓ ALB /health validation passed
+```
+
+The ALB validation returned:
+
+```text
+HTTP 200 OK
+
+{"status":"healthy"}
+```
+
+Stage 8 therefore confirms the complete deployment path from the automation controller to the externally accessible application.
+
+---
+
 ## Private Container Image Connectivity
 
 The project is designed to support private container image pulls from **Amazon ECR**.
@@ -889,7 +1108,7 @@ terraform -chdir=terraform plan
 terraform -chdir=terraform apply
 ```
 
-Server configuration and application deployment are then performed through the Docker-based Ansible controller:
+Server configuration, application deployment, and validation are then performed through the Docker-based Ansible controller:
 
 ```text
 Terraform
@@ -909,6 +1128,8 @@ Amazon ECR
 Docker
     ↓
 Application
+    ↓
+Validation
 ```
 
 The infrastructure is designed to be recreated from the repository rather than relying on manually configured AWS resources.
@@ -947,6 +1168,7 @@ The project follows principles such as:
 * Environment-specific configuration
 * Explicit infrastructure changes through Terraform
 * Server hardening through Ansible
+* Automated post-deployment validation
 * AI analysis separated from infrastructure execution
 
 The current architecture reflects these principles:
@@ -1032,7 +1254,7 @@ Stage 6
 Ansible Configuration
         ↓
 Stage 7
-Docker Deployment
+Docker Application Deployment
         ↓
 Stage 8
 Monitoring & Validation
@@ -1100,31 +1322,59 @@ Push
 
 ## Current Stage
 
-### Stage 7 — Docker Application Deployment ✅
+### Stage 8 — Monitoring & Validation ✅
 
 Completed:
 
-* Lightweight Flask application
-* Application Dockerfile
-* Non-root application container
-* Docker health check
-* Amazon ECR repository
-* Immutable ECR image tags
-* ECR scan-on-push
-* ECR AES256 encryption
-* EC2 ECR read-only IAM permissions
-* Private ECR connectivity
-* Application Ansible role
-* ECR authentication through the Docker-based Ansible controller
-* Private EC2 image pull
-* Docker application container deployment
-* Automatic container restart configuration
-* Docker container health validation
-* ALB target health validation
-* External ALB `/health` validation
-* End-to-end application traffic validation
+* Dedicated Ansible validation role
+* Amazon Linux validation
+* Docker service validation
+* Docker enablement validation
+* IPv4 forwarding validation
+* Application port validation
+* Application container existence validation
+* Application container running-state validation
+* Container restart policy validation
+* Expected ECR image validation
+* Docker health validation with startup retries
+* Application `/health` endpoint validation
+* Deployed image existence validation
+* Running container image integrity validation
+* ALB `/health` validation
+* Controller-side ALB validation
+* End-to-end deployment validation
 
-Final external validation:
+The validation workflow now verifies the deployment at multiple layers:
+
+```text
+Infrastructure
+      ↓
+Server
+      ↓
+Docker
+      ↓
+Application
+      ↓
+Deployment Image
+      ↓
+ALB
+      ↓
+External Traffic Path
+```
+
+Final validation result:
+
+```text
+app : ok=44
+      changed=3
+      unreachable=0
+      failed=0
+      skipped=0
+      rescued=0
+      ignored=0
+```
+
+Final external health response:
 
 ```text
 HTTP/1.1 200 OK
@@ -1135,15 +1385,19 @@ HTTP/1.1 200 OK
 This confirms successful application delivery through:
 
 ```text
-Internet
-    ↓
+Ansible Controller
+       ↓
+     Internet
+       ↓
 Application Load Balancer
-    ↓
+       ↓
 Private EC2
-    ↓
+       ↓
 Docker
-    ↓
+       ↓
 Flask Application
+       ↓
+/health
 ```
 
 ### Infrastructure Status
@@ -1168,17 +1422,19 @@ The EC2 instance is managed privately through AWS Systems Manager.
 
 The application is deployed as a Docker container on the private EC2 instance and is accessible externally through the Application Load Balancer.
 
+Post-deployment validation confirms that the infrastructure, server, Docker runtime, application, deployed image, and external ALB path are all functioning as expected.
+
 ### Upcoming
 
-* Monitoring and validation
-* Reproducible end-to-end automation workflow
-* Controlled deployment workflow
-* AI Infrastructure Copilot
+* Stage 9 — Reproducible Automation
+* Controlled end-to-end deployment workflow
+* Stage 10 — AI Infrastructure Copilot
 * Terraform plan analysis
 * Infrastructure security recommendations
 * Infrastructure explanation
-* Failure analysis and troubleshooting
-* Portfolio documentation and demonstration
+* Stage 11 — AI Explain & Failure Analysis
+* Automated failure analysis and troubleshooting
+* Stage 12 — Portfolio documentation and demonstration
 
 ---
 
@@ -1198,14 +1454,14 @@ The application is deployed as a Docker container on the private EC2 instance an
 * Stage 5.4 — Private Service Connectivity
 * Stage 6 — Ansible Configuration
 * Stage 7 — Docker Application Deployment
+* Stage 8 — Monitoring & Validation
 
 ### Current focus
 
-* Monitoring and validation
+* Stage 9 — Reproducible Automation
 
 ### Upcoming
 
-* Stage 8 — Monitoring & Validation
 * Stage 9 — Reproducible Automation
 * Stage 10 — AI Infrastructure Copilot
 * Stage 11 — AI Explain & Failure Analysis

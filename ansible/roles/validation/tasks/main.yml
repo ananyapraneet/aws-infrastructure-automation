@@ -1,0 +1,167 @@
+---
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Validate operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == "Amazon"
+    fail_msg: "Expected Amazon Linux, found {{ ansible_facts.distribution }}."
+    success_msg: "Operating system validation passed."
+
+- name: Validate Docker service is running
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services["docker.service"].state == "running"
+    fail_msg: "Docker service is not running."
+    success_msg: "Docker service is running."
+
+- name: Validate Docker service is enabled
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services["docker.service"].status == "enabled"
+    fail_msg: "Docker service is not enabled."
+    success_msg: "Docker service is enabled."
+
+- name: Read IPv4 forwarding state
+  ansible.builtin.command:
+    cmd: sysctl -n net.ipv4.ip_forward
+  register: ip_forward
+  changed_when: false
+
+- name: Validate IPv4 forwarding
+  ansible.builtin.assert:
+    that:
+      - ip_forward.stdout | trim == "1"
+    fail_msg: "IPv4 forwarding is disabled. Docker networking requires it."
+    success_msg: "IPv4 forwarding is enabled."
+
+- name: Check application port
+  ansible.builtin.wait_for:
+    port: 8000
+    host: 127.0.0.1
+    state: started
+    timeout: 5
+  changed_when: false
+
+- name: Inspect application container
+  community.docker.docker_container_info:
+    name: aws-infra-app
+  register: app_container
+
+- name: Validate application container exists
+  ansible.builtin.assert:
+    that:
+      - app_container.exists
+    fail_msg: "Application container aws-infra-app does not exist."
+    success_msg: "Application container exists."
+
+- name: Validate application container is running
+  ansible.builtin.assert:
+    that:
+      - app_container.container.State.Running
+    fail_msg: "Application container is not running."
+    success_msg: "Application container is running."
+
+- name: Validate application container restart policy
+  ansible.builtin.assert:
+    that:
+      - app_container.container.HostConfig.RestartPolicy.Name == "unless-stopped"
+    fail_msg: "Application container restart policy is not unless-stopped."
+    success_msg: "Application container restart policy is correct."
+
+- name: Validate application container image
+  ansible.builtin.assert:
+    that:
+      - app_container.container.Config.Image == ecr_repository_url ~ ":" ~ image_tag
+    fail_msg: >-
+      Application container is using {{ app_container.container.Config.Image }}
+      instead of {{ ecr_repository_url }}:{{ image_tag }}.
+    success_msg: "Application container is using the expected image."
+
+- name: Wait for application container to become healthy
+  community.docker.docker_container_info:
+    name: aws-infra-app
+  register: app_container_health
+  until:
+    - app_container_health.container.State.Health.Status == "healthy"
+  retries: 12
+  delay: 5
+
+- name: Validate application container health
+  ansible.builtin.assert:
+    that:
+      - app_container_health.container.State.Health.Status == "healthy"
+    fail_msg: >-
+      Application container health is
+      {{ app_container_health.container.State.Health.Status }}.
+    success_msg: "Application container health is healthy."
+
+- name: Check application health endpoint
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8000/health
+    method: GET
+    status_code: 200
+    return_content: true
+  register: app_health
+  changed_when: false
+
+- name: Validate application health response
+  ansible.builtin.assert:
+    that:
+      - app_health.status == 200
+      - app_health.json.status == "healthy"
+    fail_msg: >-
+      Application health check failed.
+      HTTP status: {{ app_health.status }}
+      Response: {{ app_health.content }}
+    success_msg: "Application health endpoint returned healthy."
+
+- name: Inspect deployed image
+  community.docker.docker_image_info:
+    name: "{{ ecr_repository_url }}:{{ image_tag }}"
+  register: deployed_image
+
+- name: Validate deployed image exists locally
+  ansible.builtin.assert:
+    that:
+      - deployed_image.images | length > 0
+    fail_msg: >-
+      Expected application image
+      {{ ecr_repository_url }}:{{ image_tag }}
+      was not found locally.
+    success_msg: "Expected application image exists locally."
+
+- name: Validate deployed image matches running container
+  ansible.builtin.assert:
+    that:
+      - deployed_image.images[0].Id == app_container.container.Image
+    fail_msg: >-
+      Running container image ID {{ app_container.container.Image }}
+      does not match deployed image ID {{ deployed_image.images[0].Id }}.
+    success_msg: "Running container matches the deployed image."
+
+- name: Check application health through ALB
+  ansible.builtin.uri:
+    url: "http://{{ alb_dns_name }}/health"
+    method: GET
+    status_code: 200
+    return_content: true
+    timeout: 10
+  register: alb_health
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+
+- name: Validate ALB health response
+  ansible.builtin.assert:
+    that:
+      - alb_health.status == 200
+      - alb_health.json.status == "healthy"
+    fail_msg: >-
+      ALB health check failed.
+      HTTP status: {{ alb_health.status }}
+      Response: {{ alb_health.content }}
+    success_msg: "ALB health endpoint returned healthy."
+  delegate_to: localhost
+  run_once: true
