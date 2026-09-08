@@ -52,3 +52,5 @@ ENV/
 *.pem
 *.key
 secrets/
+
+infra_ai.egg-info/
