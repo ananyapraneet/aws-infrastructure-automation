@@ -3,6 +3,7 @@ from pathlib import Path
 
 from infra_ai.troubleshoot.troubleshooter import troubleshoot_file
 from infra_ai.ai.openai import OpenAIProvider
+from infra_ai.validation.validator import validate_resources
 from infra_ai.analyzer.analyzer import analyze_resources
 from infra_ai.analyzer.test_data import get_controlled_findings
 from infra_ai.analyzer.terraform import TerraformAnalyzer
@@ -58,6 +59,50 @@ def analyze(use_ai: bool = False, test_mode: bool = False) -> None:
         print("AI Analysis")
         print("-----------")
         print(analysis)
+
+def validate() -> None:
+    """Validate Terraform infrastructure using deterministic checks."""
+
+    project_root = Path.cwd()
+    terraform_dir = project_root / "terraform"
+
+    if not terraform_dir.is_dir():
+        print("Infrastructure Validation")
+        print("-------------------------")
+        print("Terraform directory not found.")
+        print(f"Expected: {terraform_dir}")
+        return
+
+    analyzer = TerraformAnalyzer(terraform_dir)
+
+    try:
+        state = analyzer.load_state()
+    except Exception as exc:
+        print("Infrastructure Validation")
+        print("-------------------------")
+        print("Failed to read Terraform state.")
+        print(f"Error: {exc}")
+        return
+
+    resources = analyzer.get_resource_summaries(state)
+    findings = validate_resources(resources)
+
+    print("Infrastructure Validation")
+    print("-------------------------")
+    print()
+    print(f"Resources validated: {len(resources)}")
+    print("Checks performed: 4")
+    print(f"Findings: {len(findings)}")
+    print()
+
+    if findings:
+        print("Validation: FAILED")
+        print()
+        print(render_report(len(resources), findings))
+        return
+
+    print("Validation: PASSED")
+    print("No infrastructure validation issues detected.")
 
 def explain_file_command(file_path: str) -> None:
     """Explain an infrastructure-related file using AI."""
@@ -164,6 +209,11 @@ def main() -> None:
         help="Path to the diagnostic file to troubleshoot.",
     )
 
+    subparsers.add_parser(
+        "validate",
+        help="Validate Terraform infrastructure.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "analyze":
@@ -180,6 +230,9 @@ def main() -> None:
 
     elif args.command == "troubleshoot":
         troubleshoot_file_command(args.file)
+
+    elif args.command == "validate":
+        validate()
 
     else:
         parser.print_help()
