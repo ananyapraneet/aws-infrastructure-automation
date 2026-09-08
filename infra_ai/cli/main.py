@@ -5,26 +5,21 @@ from infra_ai.ai.openai import OpenAIProvider
 from infra_ai.analyzer.analyzer import analyze_resources
 from infra_ai.analyzer.test_data import get_controlled_findings
 from infra_ai.analyzer.terraform import TerraformAnalyzer
+from infra_ai.reporting.report import render_report
 
 
 def analyze(use_ai: bool = False, test_mode: bool = False) -> None:
     if test_mode:
         findings = get_controlled_findings()
-
-        print("Infrastructure Analysis")
-        print("------------------------")
+        resources_analyzed = 1
         print("Test mode: controlled findings")
-        print("Resources analyzed: 1")
-        print(f"Findings: {len(findings)}")
-
     else:
         project_root = Path.cwd()
         terraform_dir = project_root / "terraform"
 
-        print("Infrastructure Analysis")
-        print("------------------------")
-
         if not terraform_dir.is_dir():
+            print("Infrastructure Analysis")
+            print("------------------------")
             print("Terraform directory not found.")
             print(f"Expected: {terraform_dir}")
             return
@@ -34,33 +29,32 @@ def analyze(use_ai: bool = False, test_mode: bool = False) -> None:
         try:
             state = analyzer.load_state()
         except Exception as exc:
+            print("Infrastructure Analysis")
+            print("------------------------")
             print("Failed to read Terraform state.")
             print(f"Error: {exc}")
             return
 
         resources = analyzer.get_resource_summaries(state)
         findings = analyze_resources(resources)
+        resources_analyzed = len(resources)
 
-        print(f"Resources analyzed: {len(resources)}")
-        print(f"Findings: {len(findings)}")
+    print(render_report(resources_analyzed, findings))
 
     if use_ai and findings:
         try:
             provider = OpenAIProvider()
             analysis = provider.analyze_findings(findings)
         except RuntimeError as exc:
-            print()
             print("AI Analysis")
             print("-----------")
             print("Unable to generate AI analysis.")
             print(f"Error: {exc}")
             return
 
-        print()
         print("AI Analysis")
         print("-----------")
         print(analysis)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
