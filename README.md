@@ -2,146 +2,86 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Reproducible AWS infrastructure provisioning, server configuration, application deployment, infrastructure validation, and infrastructure analysis using **Terraform, Ansible, Docker, Amazon ECR, AWS Systems Manager, Make, and AI-assisted infrastructure analysis**.
+A production-oriented AWS infrastructure automation platform that provisions private cloud infrastructure, configures servers, deploys containerized applications, validates infrastructure, and provides **read-only AI-assisted infrastructure analysis and troubleshooting**.
+
+Built with **Terraform, Ansible, Docker, Amazon ECR, AWS Systems Manager, Application Load Balancer, Make, Python, Flask, and OpenAI**.
+
+---
 
 ## Overview
 
-This project demonstrates a production-oriented approach to automating AWS infrastructure from provisioning through application deployment and validation.
+This project demonstrates an end-to-end infrastructure automation workflow covering:
 
-The platform combines:
+* AWS infrastructure provisioning
+* Private VPC networking
+* Security group and IAM design
+* Private EC2 compute
+* Application Load Balancing
+* AWS Systems Manager-based server management
+* Ansible configuration management
+* Docker application deployment
+* Private Amazon ECR connectivity
+* Immutable container image deployments
+* Infrastructure and application validation
+* Reproducible operator workflows
+* Deterministic infrastructure analysis
+* AI-assisted infrastructure explanations
+* AI-assisted troubleshooting
+* Infrastructure validation
 
-* **Terraform** for infrastructure provisioning
-* **Ansible** for server configuration and configuration management
-* **Docker** for application containerization and Ansible controller isolation
-* **Amazon ECR** for private container image storage
-* **AWS Systems Manager** for private server management
-* **Make** for a simplified operator interface
-* **AWS** for cloud infrastructure and managed connectivity
-* **AI Infrastructure Copilot** for planned infrastructure analysis, security recommendations, configuration explanations, and failure analysis
+The platform intentionally avoids public SSH access and does not use a NAT Gateway.
 
-The infrastructure is intentionally designed without public SSH access and without a NAT Gateway.
+Private EC2 instances are managed through **AWS Systems Manager Session Manager**, while private container images are retrieved through **VPC endpoints**.
 
-Private EC2 instances are managed through **AWS Systems Manager Session Manager**, while private container images are pulled through **VPC endpoints**.
-
-Stage 9 introduces a reproducible operator workflow that combines infrastructure provisioning, configuration, deployment, and validation behind a small set of `make` commands.
-
----
-
-# Architecture
-
-```text
-                              Internet
-                                 │
-                                 ▼
-                        ┌─────────────────┐
-                        │  Application    │
-                        │      Load       │
-                        │    Balancer     │
-                        └────────┬────────┘
-                                 │
-                                 │ HTTP :8000
-                                 ▼
-                    ┌─────────────────────────┐
-                    │      Private EC2        │
-                    │     Amazon Linux 2023   │
-                    │                         │
-                    │       Docker            │
-                    │          │              │
-                    │          ▼              │
-                    │    Flask Application    │
-                    │       :8000             │
-                    └──────────┬──────────────┘
-                               │
-                    ┌──────────┴───────────┐
-                    │                      │
-                    ▼                      ▼
-              SSM Endpoints          ECR Endpoints
-                    │                      │
-                    │                      │
-                    ▼                      ▼
-             AWS Systems Manager      Amazon ECR
-                    ▲
-                    │
-                    │ AWS SSM
-                    │
-          ┌─────────┴─────────┐
-          │ Dockerized        │
-          │ Ansible Controller│
-          └─────────┬─────────┘
-                    ▲
-                    │
-             Makefile Interface
-                    ▲
-                    │
-              Developer / Operator
-```
-
-The architecture separates:
-
-* **Public traffic** through the Application Load Balancer
-* **Private application execution** on EC2
-* **Private server management** through AWS Systems Manager
-* **Private container image access** through ECR VPC endpoints
-* **Infrastructure provisioning** through Terraform
-* **Configuration management** through Ansible
-* **Application deployment** through Docker and ECR
-* **Post-deployment validation** through Ansible
-* **Operator workflow** through Make
-
----
-
-# Core Workflow
-
-Stage 9 provides a simplified operator interface around the complete infrastructure lifecycle.
+The project is designed around a simple lifecycle:
 
 ```text
-make provision
-       │
-       ▼
-   Terraform
-       │
-       ▼
-  AWS Infrastructure
-       │
-       ▼
-make configure
-       │
-       ▼
- Ansible via SSM
-       │
-       ▼
- Private EC2
-       │
-       ▼
-make deploy
-       │
-       ├── Docker Build
-       │
-       ├── ECR Authentication
-       │
-       ├── ECR Push
-       │
-       └── Ansible Deployment via SSM
-       │
-       ▼
- Running Application
-       │
-       ▼
-make validate
-       │
-       ▼
-Infrastructure + Application Validation
+Provision
+    ↓
+Configure
+    ↓
+Deploy
+    ↓
+Validate
+    ↓
+Analyze
 ```
 
-The individual responsibilities remain separated while the Makefile provides a convenient operator interface.
+Terraform remains the infrastructure source of truth, Ansible handles server configuration and deployment, and the AI layer operates in a **read-only** capacity.
 
 ---
 
-# Reproducible Automation
+# Highlights
 
-Stage 9 introduces a Makefile that acts as the primary operator interface.
+### Infrastructure as Code
 
-Available commands:
+Terraform provisions the complete AWS environment including:
+
+* VPC
+* Public and private subnets
+* Route tables
+* Security groups
+* EC2
+* Application Load Balancer
+* IAM
+* ECR
+* SSM endpoints
+* ECR endpoints
+* S3 gateway endpoint
+
+### Private-by-Design Architecture
+
+The application EC2 instance:
+
+* Has no public IP
+* Does not expose SSH
+* Runs inside a private subnet
+* Is reachable by the ALB only on port `8000`
+* Is managed through AWS Systems Manager
+
+### Reproducible Automation
+
+A Makefile provides a simple operator interface:
 
 ```bash
 make provision
@@ -152,308 +92,137 @@ make plan
 make destroy
 ```
 
-## Command Responsibilities
-
-| Command          | Responsibility                                |
-| ---------------- | --------------------------------------------- |
-| `make provision` | Provision AWS infrastructure with Terraform   |
-| `make plan`      | Preview Terraform infrastructure changes      |
-| `make configure` | Configure private EC2 servers with Ansible    |
-| `make deploy`    | Build, tag, push, and deploy the application  |
-| `make validate`  | Validate infrastructure and application state |
-| `make destroy`   | Destroy provisioned AWS infrastructure        |
-
-The workflow intentionally separates:
-
-```text
-Provision
-   ↓
-Configure
-   ↓
-Deploy
-   ↓
-Validate
-```
-
-This makes individual lifecycle stages independently executable and easier to troubleshoot.
-
----
-
-# Git-Based Application Deployment
+### Immutable Deployments
 
 Application images are tagged using the current Git commit SHA.
 
 ```text
 Git Commit
-     │
-     ▼
-Short Commit SHA
-     │
-     ▼
-Docker Build
-     │
-     ▼
-Amazon ECR
-     │
-     ▼
-Private EC2
-```
-
-The Makefile automatically derives the image tag:
-
-```makefile
-IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
-```
-
-For example:
-
-```text
-d0a00b8
-```
-
-The resulting image is pushed to ECR as:
-
-```text
-aws-infrastructure-app:d0a00b8
-```
-
-The ECR repository uses **immutable image tags**, preventing an existing deployment tag from being overwritten.
-
-This provides a simple deployment traceability model:
-
-```text
-Git Commit
+    ↓
+Short SHA
     ↓
 Docker Image
     ↓
-ECR Image Tag
+Immutable ECR Tag
     ↓
-EC2 Deployment
-```
-
----
-
-# Deployment Flow
-
-The `make deploy` command performs the complete application deployment workflow.
-
-```text
-Git commit SHA
-      │
-      ▼
-Docker build
-      │
-      ▼
-ECR authentication
-      │
-      ▼
-Immutable ECR tag
-      │
-      ▼
-Push image
-      │
-      ▼
-Ansible via SSM
-      │
-      ▼
 Private EC2
-      │
-      ▼
-Docker pull
-      │
-      ▼
-Container replacement
-      │
-      ▼
-Running application
 ```
 
-The deployment process is intentionally separate from Terraform.
+### Infrastructure Validation
 
-Terraform manages infrastructure.
+The validation system checks infrastructure, server configuration, Docker state, deployed image state, and application health.
 
-Docker and ECR manage the application image.
+### AI Infrastructure Copilot
 
-Ansible manages application deployment on the server.
-
----
-
-# Docker Application Deployment
-
-The application is packaged as a lightweight Docker image.
-
-Application:
-
-```text
-Flask
-  │
-  ▼
-Docker
-  │
-  ▼
-Port 8000
-```
-
-The application exposes:
-
-```text
-GET /
-GET /health
-```
-
-Example health response:
-
-```json
-{
-  "status": "healthy"
-}
-```
-
-The application container includes a Docker health check against `/health`.
-
-The container also runs as a non-root user.
-
----
-
-# AI Infrastructure Copilot
-
-> **Planned — Stage 10**
-
-The project is designed to evolve into an **AI Infrastructure Copilot**.
-
-The AI layer will focus on infrastructure analysis rather than directly modifying production infrastructure.
-
-Planned capabilities include:
-
-* Terraform configuration analysis
-* Infrastructure architecture explanations
-* Security recommendations
-* Cost-awareness analysis
-* Configuration explanations
-* Infrastructure drift analysis
-* Deployment diagnostics
-* Failure analysis
-* Validation failure explanations
-* Suggested remediation steps
-
-The intended architecture is:
-
-```text
-                    AI Infrastructure Copilot
-                              │
-                ┌─────────────┼─────────────┐
-                │             │             │
-                ▼             ▼             ▼
-           Terraform       Ansible       Validation
-             Files          Files           Results
-                │             │             │
-                └─────────────┼─────────────┘
-                              ▼
-                     Read-Only Analysis
-                              │
-                              ▼
-                  Recommendations / Explanation
-```
-
-The AI layer will initially remain **read-only with respect to infrastructure changes**.
-
----
-
-# Technology Stack
-
-## Infrastructure
-
-* AWS
-* Terraform
-* VPC
-* EC2
-* Application Load Balancer
-* IAM
-* Amazon ECR
-* AWS Systems Manager
-* VPC Endpoints
-
-## Configuration Management
-
-* Ansible
-* AWS SSM connection plugin
-* Dockerized Ansible controller
-
-## Application
-
-* Python
-* Flask
-* Docker
-
-## Automation
-
-* Make
-* Git
-* Bash
-
-## Planned AI Layer
+The project includes a read-only AI layer for:
 
 * Infrastructure analysis
-* Configuration explanation
+* Infrastructure explanations
+* Configuration explanations
 * Security recommendations
+* Deployment troubleshooting
 * Failure analysis
-* AI-assisted troubleshooting
+
+The deterministic analysis layer runs before AI generation so that the AI consumes structured infrastructure findings rather than raw Terraform state.
 
 ---
 
-# Project Structure
+# Architecture
 
 ```text
-aws-infrastructure-automation/
-│
-├── app/
-│   ├── app.py
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── ansible/
-│   ├── ansible.cfg
-│   │
-│   ├── inventory/
-│   │   └── hosts.yml
-│   │
-│   ├── site.yml
-│   │
-│   └── roles/
-│       ├── user_setup/
-│       ├── ssh_hardening/
-│       ├── system_config/
-│       ├── docker/
-│       ├── security_hardening/
-│       ├── application/
-│       └── validation/
-│
-├── terraform/
-│   ├── providers.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── networking.tf
-│   ├── security.tf
-│   ├── iam.tf
-│   ├── ec2.tf
-│   ├── alb.tf
-│   ├── endpoints.tf
-│   └── ecr.tf
-│
-├── Makefile
-│
-├── Dockerfile
-│
-├── .gitignore
-│
-└── README.md
+                              Internet
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  Application    │
+                         │      Load       │
+                         │    Balancer     │
+                         │      :80        │
+                         └────────┬────────┘
+                                  │
+                                  │ HTTP :8000
+                                  ▼
+                    ┌─────────────────────────┐
+                    │      Private EC2        │
+                    │     Amazon Linux 2023   │
+                    │                         │
+                    │        Docker           │
+                    │           │             │
+                    │           ▼             │
+                    │    Flask Application    │
+                    │        :8000            │
+                    └──────────┬──────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+        ECR Endpoints    SSM Endpoints      S3 Endpoint
+              │                │
+              ▼                ▼
+        Amazon ECR       AWS Systems Manager
+                               ▲
+                               │
+                               │ AWS SSM
+                               │
+                    ┌──────────┴──────────┐
+                    │ Dockerized Ansible  │
+                    │      Controller     │
+                    └──────────┬──────────┘
+                               ▲
+                               │
+                         Makefile CLI
+                               ▲
+                               │
+                         Developer
 ```
+
+The architecture separates:
+
+* **Public traffic** through the Application Load Balancer
+* **Private application execution** on EC2
+* **Private server management** through AWS Systems Manager
+* **Private container image access** through VPC endpoints
+* **Infrastructure provisioning** through Terraform
+* **Configuration management** through Ansible
+* **Application deployment** through Docker and ECR
+* **Validation** through Ansible
+* **Infrastructure analysis** through the AI tooling
 
 ---
 
-# Infrastructure Components
+# Infrastructure Architecture
 
-The AWS environment currently contains:
+The AWS environment is deployed in:
+
+```text
+Region: ap-south-1
+VPC:    10.0.0.0/16
+```
+
+Network layout:
+
+```text
+VPC 10.0.0.0/16
+│
+├── Public Subnets
+│   ├── 10.0.1.0/24
+│   └── 10.0.2.0/24
+│       │
+│       └── Application Load Balancer
+│
+└── Private Subnets
+    ├── 10.0.11.0/24
+    │   │
+    │   └── Private EC2
+    │
+    └── 10.0.12.0/24
+```
+
+There is intentionally **no NAT Gateway**.
+
+Private AWS service connectivity is provided through VPC endpoints.
+
+### AWS Resources
 
 | Component          | Configuration             |
 | ------------------ | ------------------------- |
@@ -472,38 +241,28 @@ The AWS environment currently contains:
 | Server Management  | AWS Systems Manager       |
 | NAT Gateway        | Not used                  |
 
----
+### VPC Overview
 
-# Network Layout
+![AWS VPC Overview](docs/screenshots/01-aws-vpc-overview.png)
 
-```text
-VPC
-10.0.0.0/16
-│
-├── Public Subnet
-│   ├── 10.0.1.0/24
-│   └── 10.0.2.0/24
-│
-└── Private Subnets
-    ├── 10.0.11.0/24
-    │   └── EC2
-    │
-    └── 10.0.12.0/24
-```
+### Network and Subnets
 
-The Application Load Balancer is placed in the public subnets.
-
-The application EC2 instance is placed in a private subnet.
-
-There is intentionally **no direct public access to the EC2 instance**.
+![AWS Network and Subnets](docs/screenshots/02-network-subnets.png)
 
 ---
 
-# Private Server Management
+# Private EC2 and SSM Management
 
-The EC2 instance does not expose SSH to the internet.
+The EC2 instance is intentionally private.
 
-Instead, Ansible connects through AWS Systems Manager.
+It does not require:
+
+* A public IPv4 address
+* Internet-facing SSH
+* A bastion host
+* SSH key distribution
+
+Instead, the management path is:
 
 ```text
 Developer
@@ -519,22 +278,361 @@ SSM VPC Endpoints
 Private EC2
 ```
 
-The EC2 instance uses:
+The EC2 IAM role includes:
 
 ```text
 AmazonSSMManagedInstanceCore
 ```
 
-This provides a secure management path without requiring:
+This allows Systems Manager to manage the instance without exposing SSH.
 
-* Public IP addresses
-* Internet-facing SSH
-* Bastion hosts
-* SSH key distribution
+### Private EC2 / SSM Evidence
+
+![Private EC2 and SSM](docs/screenshots/03-private-ec2-ssm.png)
 
 ---
 
-# Docker-Based Ansible Controller
+# Application Load Balancer
+
+The Application Load Balancer provides the public entry point to the application.
+
+```text
+Internet
+   │
+   ▼
+ALB :80
+   │
+   │ HTTP :8000
+   ▼
+Private EC2
+   │
+   ▼
+Docker Container
+   │
+   ▼
+Flask :8000
+```
+
+The EC2 security group does not allow unrestricted application access.
+
+Application traffic is permitted only from the ALB security group.
+
+### Load Balancer
+
+![Application Load Balancer](docs/screenshots/04-alb.png)
+
+### Application Health
+
+The application exposes:
+
+```text
+GET /
+GET /health
+```
+
+The health endpoint returns:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+The ALB health endpoint was successfully validated externally.
+
+![ALB Health Check](docs/screenshots/06-alb-health.png)
+
+---
+
+# Security Group Design
+
+Security groups are separated by responsibility.
+
+```text
+Internet
+   │
+   ▼
+ALB Security Group
+   │
+   │ TCP 8000
+   ▼
+EC2 Security Group
+```
+
+The EC2 security group:
+
+* Allows application traffic from the ALB security group
+* Does not expose SSH to the internet
+* Does not allow unrestricted application access
+
+The ALB is the public-facing component; the application server remains private.
+
+![Security Group Configuration](docs/screenshots/05-security-groups.png)
+
+---
+
+# Private Container Image Connectivity
+
+The EC2 instance does not require public internet access to retrieve its application image.
+
+Private connectivity is provided through:
+
+* ECR API interface endpoint
+* ECR Docker Registry interface endpoint
+* S3 gateway endpoint
+
+The connectivity model is:
+
+```text
+Private EC2
+     │
+     ├── ECR API Endpoint
+     │
+     ├── ECR DKR Endpoint
+     │
+     └── S3 Gateway Endpoint
+             │
+             ▼
+          Amazon ECR
+```
+
+This allows the application server to pull images from ECR without requiring a NAT Gateway.
+
+---
+
+# Docker Application
+
+The application is a lightweight Flask service.
+
+```text
+Flask
+  │
+  ▼
+Docker
+  │
+  ▼
+Port 8000
+```
+
+Endpoints:
+
+```text
+GET /
+GET /health
+```
+
+Example root response:
+
+```json
+{
+  "service": "aws-infrastructure-automation",
+  "status": "running"
+}
+```
+
+Example health response:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+The application container:
+
+* Uses Python 3.12
+* Runs as a non-root user
+* Exposes port `8000`
+* Includes a Docker health check
+* Is deployed through Ansible
+
+---
+
+# Git-Based Deployment
+
+Application images are tagged using the current Git commit SHA.
+
+The Makefile derives the tag with:
+
+```makefile
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+```
+
+For example:
+
+```text
+6f7197d
+```
+
+The resulting image becomes:
+
+```text
+aws-infrastructure-app:6f7197d
+```
+
+The image is pushed to Amazon ECR using the same immutable tag.
+
+The deployment chain is therefore:
+
+```text
+Git Commit
+    ↓
+Short Commit SHA
+    ↓
+Docker Build
+    ↓
+Amazon ECR
+    ↓
+Private EC2
+    ↓
+Running Container
+```
+
+ECR uses **immutable image tags**, preventing an existing image tag from being overwritten.
+
+This provides deployment traceability from source code to the running application.
+
+---
+
+# Deployment Flow
+
+The complete deployment workflow is:
+
+```text
+Git Commit SHA
+      │
+      ▼
+Docker Build
+      │
+      ▼
+ECR Authentication
+      │
+      ▼
+Immutable ECR Tag
+      │
+      ▼
+Push Image
+      │
+      ▼
+Ansible via SSM
+      │
+      ▼
+Private EC2
+      │
+      ▼
+Docker Pull
+      │
+      ▼
+Container Replacement
+      │
+      ▼
+Running Application
+```
+
+Terraform manages infrastructure.
+
+Docker and ECR manage application images.
+
+Ansible manages application deployment.
+
+AWS Systems Manager provides the private management path.
+
+---
+
+# Reproducible Automation
+
+The Makefile provides a simplified operator interface over the infrastructure lifecycle.
+
+```bash
+make provision
+make configure
+make deploy
+make validate
+make plan
+make destroy
+```
+
+## Command Responsibilities
+
+| Command          | Responsibility                                |
+| ---------------- | --------------------------------------------- |
+| `make provision` | Provision AWS infrastructure with Terraform   |
+| `make plan`      | Preview Terraform infrastructure changes      |
+| `make configure` | Configure private EC2 with Ansible            |
+| `make deploy`    | Build, tag, push, and deploy the application  |
+| `make validate`  | Validate infrastructure and application state |
+| `make destroy`   | Destroy provisioned AWS infrastructure        |
+
+The lifecycle remains intentionally separated:
+
+```text
+Provision
+    ↓
+Configure
+    ↓
+Deploy
+    ↓
+Validate
+```
+
+This makes each stage independently executable and easier to troubleshoot.
+
+---
+
+# Ansible Configuration
+
+The Ansible playbook separates configuration, deployment, and validation through tags.
+
+```yaml
+---
+- name: Configure application servers
+  hosts: app_servers
+  become: true
+
+  roles:
+    - { role: user_setup, tags: [configure] }
+    - { role: ssh_hardening, tags: [configure] }
+    - { role: system_config, tags: [configure] }
+    - { role: docker, tags: [configure] }
+    - { role: security_hardening, tags: [configure] }
+    - { role: application, tags: [deploy] }
+    - { role: validation, tags: [validate] }
+```
+
+The lifecycle can therefore be executed independently:
+
+```bash
+ansible-playbook \
+  -i inventory/hosts.yml \
+  site.yml \
+  --tags configure
+```
+
+```bash
+ansible-playbook \
+  -i inventory/hosts.yml \
+  site.yml \
+  --tags deploy
+```
+
+```bash
+ansible-playbook \
+  -i inventory/hosts.yml \
+  site.yml \
+  --tags validate
+```
+
+The Makefile provides the corresponding simplified commands:
+
+```bash
+make configure
+make deploy
+make validate
+```
+
+---
+
+# Dockerized Ansible Controller
 
 The Ansible execution environment is itself containerized.
 
@@ -557,110 +655,28 @@ Ansible Controller
 AWS Systems Manager
 ```
 
-The controller uses pinned versions for its core Ansible dependencies and collections.
-
-This provides:
-
-* Reproducible Ansible execution
-* Linux-based process behavior
-* Host Python isolation
-* Consistent dependencies
-* Portable automation
-* Reliable Ansible-over-SSM execution
-
 The controller image is:
 
 ```text
 aws-infra-ansible
 ```
 
----
+Containerizing the controller provides:
 
-# Ansible Configuration
-
-The main Ansible playbook separates infrastructure configuration, deployment, and validation using tags.
-
-```yaml
----
-- name: Configure application servers
-  hosts: app_servers
-  become: true
-
-  roles:
-    - { role: user_setup, tags: [configure] }
-    - { role: ssh_hardening, tags: [configure] }
-    - { role: system_config, tags: [configure] }
-    - { role: docker, tags: [configure] }
-    - { role: security_hardening, tags: [configure] }
-    - { role: application, tags: [deploy] }
-    - { role: validation, tags: [validate] }
-```
-
-This allows the automation to execute only the required lifecycle stage.
-
-For example:
-
-```bash
-ansible-playbook -i inventory/hosts.yml site.yml --tags configure
-```
-
-or:
-
-```bash
-ansible-playbook -i inventory/hosts.yml site.yml --tags deploy
-```
-
-or:
-
-```bash
-ansible-playbook -i inventory/hosts.yml site.yml --tags validate
-```
-
-The Makefile exposes these operations through:
-
-```bash
-make configure
-make deploy
-make validate
-```
+* Reproducible Ansible execution
+* Host Python isolation
+* Consistent dependencies
+* Linux-based execution behavior
+* Portable automation
+* Reliable Ansible-over-SSM execution
 
 ---
 
-# Application Deployment Role
+# Infrastructure Validation
 
-The Ansible application role is responsible for deploying the selected ECR image.
+The validation layer verifies both infrastructure and application state.
 
-The deployment sequence is:
-
-```text
-Login to ECR
-     ↓
-Pull application image
-     ↓
-Stop existing container
-     ↓
-Start new container
-```
-
-The image repository and image tag are supplied dynamically by the Makefile.
-
-Example:
-
-```text
-ecr_repository_url=<Terraform ECR output>
-image_tag=<Git commit SHA>
-aws_region=ap-south-1
-```
-
-This avoids hardcoding the deployed image version into the playbook.
-
----
-
-# Monitoring & Validation
-
-Stage 8 introduced infrastructure and application validation.
-
-The validation role checks:
+Checks include:
 
 * Operating system
 * Docker service state
@@ -675,10 +691,10 @@ The validation role checks:
 * Local `/health` endpoint
 * Deployed image existence
 * Running container image
-* Running container image matches deployed image
+* Running container image matching the deployed image
 * Application Load Balancer `/health` endpoint
 
-The final Stage 9 validation run completed successfully:
+The final validation run completed successfully:
 
 ```text
 PLAY RECAP
@@ -686,143 +702,556 @@ PLAY RECAP
 app : ok=22 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-The validation confirmed the deployed application image and end-to-end ALB health.
+### Deployment Validation Evidence
+
+![Deployment Validation](docs/screenshots/07-deployment-validation.png)
 
 ---
 
-# Private Container Image Connectivity
+# AI Infrastructure Copilot
 
-The EC2 instance does not require public internet access to pull the application image.
+The project includes a read-only **AI Infrastructure Copilot**.
 
-Private connectivity is provided through VPC endpoints.
+The AI layer does not provision infrastructure, execute commands, or directly modify AWS resources.
+
+Its purpose is to help an operator understand infrastructure and diagnose issues while keeping infrastructure changes under explicit human control.
+
+The architecture is:
 
 ```text
-Private EC2
-     │
-     ├── ECR API Endpoint
-     │
-     ├── ECR DKR Endpoint
-     │
-     └── S3 Gateway Endpoint
-             │
-             ▼
-          Amazon ECR
+                    infra-ai
+                       │
+                       ▼
+                Terraform JSON
+                       │
+                       ▼
+          Deterministic Infrastructure
+                 Analyzer
+                       │
+                       ▼
+                    Findings
+                       │
+                       ▼
+              AI Explanation Layer
+                       │
+                       ▼
+        Human-readable Recommendations
 ```
 
-The environment includes:
+The important design principle is:
 
-* ECR API interface endpoint
-* ECR Docker Registry interface endpoint
-* S3 gateway endpoint
+```text
+Terraform State
+      ↓
+Deterministic Analysis
+      ↓
+Structured Findings
+      ↓
+AI Interpretation
+      ↓
+Human Decision
+```
 
-This allows the private EC2 instance to retrieve container images without requiring a NAT Gateway.
+The AI does not become the source of truth.
+
+Terraform remains the source of truth for infrastructure.
 
 ---
 
-# Reproducibility
+# AI CLI
 
-The project is designed around repeatable infrastructure and deployment operations.
+The project provides the following commands:
+
+```bash
+infra-ai analyze
+infra-ai explain <file>
+infra-ai troubleshoot <file>
+infra-ai validate
+```
+
+---
+
+## `infra-ai analyze`
+
+Analyzes Terraform infrastructure using deterministic analysis.
+
+The analyzer loads Terraform state through:
+
+```text
+terraform show -json
+```
+
+and extracts infrastructure resources for analysis.
+
+The current infrastructure contains:
+
+```text
+38 resources
+```
+
+The analyzer checks areas including:
+
+### Security
+
+* Public SSH access
+* Public application access
+
+### IAM
+
+* Systems Manager permissions
+* ECR read permissions
+
+### Network
+
+* ECR API endpoint
+* ECR Docker Registry endpoint
+* SSM endpoint
+* SSMMessages endpoint
+* S3 endpoint
+
+The current production infrastructure produces:
+
+```text
+Resources analyzed: 38
+Findings: 0
+```
+
+### Infrastructure Analysis Evidence
+
+![AI Infrastructure Analysis](docs/screenshots/08-ai-infrastructure-analysis.png)
+
+---
+
+# Deterministic Analysis
+
+The AI layer is intentionally placed **after deterministic infrastructure analysis**.
+
+For example, a controlled insecure security group test produces:
+
+```text
+Severity: HIGH
+Category: SECURITY
+Resource: test.security_group.insecure
+
+Title:
+SSH exposed to the internet
+
+Recommendation:
+Restrict SSH access to a trusted CIDR or use AWS Systems Manager.
+```
+
+This approach provides several advantages:
+
+* Predictable infrastructure checks
+* Testable findings
+* Reduced hallucination risk
+* Structured AI input
+* Separation between detection and explanation
+
+The AI receives structured findings rather than having to infer the infrastructure state from raw Terraform data.
+
+---
+
+# AI Explain
+
+The `infra-ai explain` command accepts a file as its source of truth.
+
+```bash
+infra-ai explain <file>
+```
+
+The explanation layer is designed to:
+
+* Explain observed infrastructure or configuration
+* Use only the supplied file contents as evidence
+* Distinguish observed configuration from recommendations
+* Avoid inventing infrastructure
+* Avoid executing commands
+* Avoid automatically changing infrastructure
+
+This makes the explanation layer suitable for reviewing configuration files, infrastructure artifacts, and operational outputs.
+
+---
+
+# AI Troubleshooting
+
+The `infra-ai troubleshoot` command analyzes an operational failure or diagnostic file.
+
+```bash
+infra-ai troubleshoot <file>
+```
+
+The troubleshooting workflow is designed to identify:
+
+1. Most likely cause
+2. Evidence supporting the diagnosis
+3. Other plausible causes when evidence is insufficient
+4. Practical validation checks
+5. Recommended resolution
+
+The troubleshooting system explicitly distinguishes:
+
+```text
+Evidence
+   ↓
+Inference
+   ↓
+Recommendation
+```
+
+It does not assume access to systems or infrastructure that are not represented in the supplied input.
+
+It also does not execute commands or automatically modify infrastructure.
+
+A synthetic deployment failure fixture is included in the repository for testing the troubleshooting logic.
+
+---
+
+# Infrastructure Validation CLI
+
+The `infra-ai validate` command provides deterministic infrastructure validation.
+
+```bash
+infra-ai validate
+```
+
+Current validation result:
+
+```text
+Infrastructure Validation
+-------------------------
+
+Resources validated: 38
+Checks performed: 4
+Findings: 0
+
+Validation: PASSED
+No infrastructure validation issues detected.
+```
+
+This provides a second validation interface alongside the Ansible deployment validation.
+
+---
+
+# Validation Evidence
+
+The project includes multiple layers of validation.
+
+### Ansible Validation
+
+```text
+app : ok=22 changed=0 unreachable=0 failed=0
+```
+
+### Infrastructure Validation
+
+```text
+Resources validated: 38
+Checks performed: 4
+Findings: 0
+
+Validation: PASSED
+```
+
+### Automated Tests
+
+```text
+22 passed
+```
+
+### External Application Validation
+
+The Application Load Balancer successfully returned:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+### Validation and Test Evidence
+
+![Validation and Tests](docs/screenshots/09-validation-and-tests.png)
+
+---
+
+# Test Coverage
+
+The AI and infrastructure automation components include automated tests covering:
+
+```text
+tests/
+├── ai/
+│   ├── test_openai.py
+│   ├── test_prompts.py
+│   └── test_reporting.py
+│
+├── cli/
+│   ├── test_explain.py
+│   └── test_troubleshoot.py
+│
+├── explain/
+│   └── test_explainer.py
+│
+├── inputs/
+│   └── test_files.py
+│
+├── troubleshoot/
+│   └── test_troubleshooter.py
+│
+├── validation/
+│   └── test_validator.py
+│
+└── fixtures/
+    └── deployment-error.txt
+```
+
+The final test suite completed with:
+
+```text
+22 passed
+```
+
+---
+
+# Repository Structure
+
+```text
+aws-infrastructure-automation/
+│
+├── app/
+│   ├── app.py
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── ansible/
+│   ├── Dockerfile
+│   ├── ansible.cfg
+│   ├── inventory/
+│   │   └── hosts.yml
+│   ├── site.yml
+│   └── roles/
+│       ├── user_setup/
+│       ├── ssh_hardening/
+│       ├── system_config/
+│       ├── docker/
+│       ├── security_hardening/
+│       ├── application/
+│       └── validation/
+│
+├── infra_ai/
+│   ├── ai/
+│   │   ├── base.py
+│   │   ├── openai.py
+│   │   └── prompts.py
+│   │
+│   ├── analyzer/
+│   │   ├── analyzer.py
+│   │   ├── iam.py
+│   │   ├── network.py
+│   │   ├── security.py
+│   │   ├── terraform.py
+│   │   └── test_data.py
+│   │
+│   ├── cli/
+│   │   └── main.py
+│   │
+│   ├── explain/
+│   │   └── explainer.py
+│   │
+│   ├── inputs/
+│   │   └── files.py
+│   │
+│   ├── reporting/
+│   │   └── report.py
+│   │
+│   ├── troubleshoot/
+│   │   └── troubleshooter.py
+│   │
+│   └── validation/
+│       └── validator.py
+│
+├── terraform/
+│   ├── alb.tf
+│   ├── ansible_ssm.tf
+│   ├── ec2.tf
+│   ├── ecr.tf
+│   ├── ecr_endpoints.tf
+│   ├── iam.tf
+│   ├── main.tf
+│   ├── outputs.tf
+│   ├── providers.tf
+│   ├── routes.tf
+│   ├── s3_endpoint.tf
+│   ├── security_groups.tf
+│   ├── ssm.tf
+│   ├── subnets.tf
+│   ├── variables.tf
+│   ├── versions.tf
+│   └── vpc.tf
+│
+├── tests/
+│   ├── ai/
+│   ├── cli/
+│   ├── explain/
+│   ├── fixtures/
+│   ├── inputs/
+│   ├── troubleshoot/
+│   └── validation/
+│
+├── docs/
+│   └── screenshots/
+│       ├── 01-aws-vpc-overview.png
+│       ├── 02-network-subnets.png
+│       ├── 03-private-ec2-ssm.png
+│       ├── 04-alb.png
+│       ├── 05-security-groups.png
+│       ├── 06-alb-health.png
+│       ├── 07-deployment-validation.png
+│       ├── 08-ai-infrastructure-analysis.png
+│       └── 09-validation-and-tests.png
+│
+├── Makefile
+├── .gitignore
+└── README.md
+```
+
+---
+
+# Technology Stack
 
 ## Infrastructure
 
-```bash
-make provision
-```
+* AWS
+* Terraform
+* VPC
+* EC2
+* Application Load Balancer
+* IAM
+* Amazon ECR
+* AWS Systems Manager
+* VPC Endpoints
 
-runs:
+## Configuration Management
 
-```text
-terraform init
-      ↓
-terraform apply
-```
+* Ansible
+* AWS SSM connection plugin
+* Dockerized Ansible controller
+* Ansible Collections
 
-## Infrastructure Planning
+## Application
 
-```bash
-make plan
-```
+* Python
+* Flask
+* Docker
 
-runs:
+## Automation
 
-```text
-terraform init
-      ↓
-terraform plan
-```
+* Make
+* Git
+* Bash
 
-## Server Configuration
+## AI
 
-```bash
-make configure
-```
+* Python
+* OpenAI API
+* Deterministic infrastructure analysis
+* AI-assisted explanations
+* AI-assisted troubleshooting
+* Infrastructure validation
 
-runs the Dockerized Ansible controller with:
+---
 
-```text
---tags configure
-```
+# Security Considerations
 
-## Application Deployment
+Security was considered throughout the infrastructure design rather than added as a final layer.
 
-```bash
-make deploy
-```
+## No Public EC2 Access
 
-performs:
+The EC2 instance does not expose SSH to the internet.
 
-```text
-Docker Build
-    ↓
-ECR Login
-    ↓
-Git SHA Tag
-    ↓
-ECR Push
-    ↓
-Ansible Deploy
-    ↓
-AWS SSM
-    ↓
-Private EC2
-```
+## Private Server Management
 
-## Validation
+AWS Systems Manager is used instead of public SSH.
 
-```bash
-make validate
-```
+## Private Application Server
 
-runs the validation role with:
+The application runs on a private EC2 instance.
 
-```text
---tags validate
-```
+## Security Group Separation
 
-and dynamically supplies:
+The ALB and EC2 use separate security groups.
 
-* ECR repository URL
-* AWS region
-* deployed image tag
-* Application Load Balancer DNS name
+The EC2 security group accepts application traffic only from the ALB security group.
 
-## Destruction
+## Non-Root Container
 
-```bash
-make destroy
-```
+The application container runs as a non-root user.
 
-runs:
+## Immutable ECR Tags
+
+ECR image tags are configured as immutable.
+
+## ECR Image Scanning
+
+ECR scan-on-push is enabled.
+
+## IAM Permissions
+
+The EC2 instance is assigned permissions required for:
+
+* Systems Manager management
+* ECR image retrieval
+
+## Read-Only AI
+
+The AI layer cannot directly modify AWS infrastructure.
+
+Its responsibility is limited to:
 
 ```text
-terraform destroy
+Analyze
+Explain
+Recommend
+Troubleshoot
+Validate
 ```
+
+Infrastructure changes remain an explicit operator responsibility.
+
+---
+
+# Cost Considerations
+
+The architecture is designed to avoid unnecessary infrastructure costs while maintaining a realistic production-oriented topology.
+
+The design intentionally avoids:
+
+* NAT Gateway
+* Bastion host
+* Public EC2 management
+* Unnecessary managed services
+
+Private AWS service connectivity is instead provided using VPC endpoints.
+
+The main cost-bearing components in this architecture can include:
+
+* EC2
+* Application Load Balancer
+* VPC interface endpoints
+* ECR storage and image transfer
+* S3 usage
+* AWS Systems Manager-related services depending on usage
+
+The absence of a NAT Gateway is particularly intentional because NAT Gateway hourly and data-processing charges can be significant for a small portfolio environment.
+
+The architecture therefore demonstrates a practical trade-off between **private connectivity, security, and cost awareness** rather than assuming that private networking is automatically free.
 
 ---
 
 # Host Prerequisites
 
-The Makefile expects the following tools to be available on the operator machine:
+The operator machine requires:
 
 * Docker
 * AWS CLI
@@ -839,89 +1268,325 @@ AWS_PROFILE=admin-1
 AWS_REGION=ap-south-1
 ```
 
-The Ansible controller image must be available locally:
+The Dockerized Ansible controller image must be available locally:
 
 ```text
 aws-infra-ansible
 ```
 
-The Ansible controller itself is Dockerized, but Docker and AWS CLI are still used by the host for operations such as:
+Docker and AWS CLI remain host prerequisites because they are used for operations such as:
 
 * Building the application image
 * Authenticating to ECR
-* Pushing the image
+* Pushing the application image
 * Running the Ansible controller
 
 ---
 
-# Security Principles
+# Deployment
 
-The project follows several security-oriented design principles.
+## 1. Configure AWS
 
-### No Public EC2 Access
+Configure an AWS CLI profile with permissions to provision the required infrastructure.
 
-The EC2 instance does not expose SSH to the internet.
+The project currently uses:
 
-### Private Server Management
+```text
+AWS_PROFILE=admin-1
+AWS_REGION=ap-south-1
+```
 
-AWS Systems Manager is used instead of public SSH.
+These values can be overridden:
 
-### Private Application Server
-
-The application runs on a private EC2 instance.
-
-### Security Group Separation
-
-The EC2 security group permits application traffic only from the Application Load Balancer security group.
-
-### Non-Root Containers
-
-The application container runs as a non-root user.
-
-### Immutable ECR Tags
-
-ECR image tags are immutable.
-
-### ECR Image Scanning
-
-ECR scan-on-push is enabled.
-
-### Least-Privilege IAM
-
-The EC2 instance receives only the permissions required for:
-
-* Systems Manager management
-* ECR image retrieval
-
-### Read-Only AI Design
-
-The planned AI layer will analyze infrastructure without directly modifying AWS resources.
+```bash
+AWS_PROFILE=<profile> AWS_REGION=<region> make provision
+```
 
 ---
 
-# Cost-Aware Design
+## 2. Provision Infrastructure
 
-The architecture intentionally avoids unnecessary managed infrastructure costs.
+Initialize and apply Terraform:
 
-Current design choices include:
+```bash
+make provision
+```
 
-* `t3.micro` EC2
-* No NAT Gateway
-* VPC endpoints for private AWS service connectivity
-* Single application instance
-* Lightweight Docker images
-* Amazon ECR
-* Application Load Balancer
+Or preview changes first:
 
-The absence of a NAT Gateway is particularly intentional because NAT Gateway hourly and data-processing charges can significantly increase the cost of a small portfolio environment.
+```bash
+make plan
+```
 
-Private connectivity is instead provided through VPC endpoints required for the application's AWS dependencies.
+Terraform provisions the AWS networking, security, compute, load balancing, IAM, ECR, SSM, and private connectivity components.
 
 ---
 
-# Development Workflow
+## 3. Configure the Server
 
-The project is being developed incrementally.
+Run the Ansible configuration workflow:
+
+```bash
+make configure
+```
+
+This configures the private EC2 instance through AWS Systems Manager.
+
+---
+
+## 4. Deploy the Application
+
+Build and deploy the application:
+
+```bash
+make deploy
+```
+
+The workflow performs:
+
+```text
+Docker Build
+    ↓
+ECR Login
+    ↓
+Git SHA Tag
+    ↓
+ECR Push
+    ↓
+Ansible Deployment
+    ↓
+AWS SSM
+    ↓
+Private EC2
+```
+
+---
+
+## 5. Validate
+
+Run:
+
+```bash
+make validate
+```
+
+The validation workflow checks the server, Docker, deployed image, container health, application endpoint, and ALB health.
+
+---
+
+## 6. Analyze Infrastructure
+
+Run the infrastructure analyzer:
+
+```bash
+infra-ai analyze
+```
+
+Expected healthy infrastructure result:
+
+```text
+Resources analyzed: 38
+Findings: 0
+```
+
+---
+
+## 7. Validate Infrastructure with the AI CLI
+
+Run:
+
+```bash
+infra-ai validate
+```
+
+Expected result:
+
+```text
+Resources validated: 38
+Checks performed: 4
+Findings: 0
+
+Validation: PASSED
+```
+
+---
+
+# Cleanup
+
+When the environment is no longer required, destroy the provisioned AWS resources:
+
+```bash
+make destroy
+```
+
+This executes:
+
+```text
+terraform destroy
+```
+
+Before destroying an environment, ensure that any resources or data that need to be retained have been backed up.
+
+---
+
+# Failure Scenarios and Troubleshooting
+
+The project includes a synthetic deployment failure fixture:
+
+```text
+tests/fixtures/deployment-error.txt
+```
+
+The fixture represents an application deployment failure involving an ECR authentication problem.
+
+The troubleshooting CLI can analyze the fixture with:
+
+```bash
+infra-ai troubleshoot tests/fixtures/deployment-error.txt
+```
+
+The purpose of the fixture is to test the troubleshooting workflow without requiring a live infrastructure failure.
+
+The troubleshooting design emphasizes:
+
+```text
+Observed Evidence
+        ↓
+Likely Cause
+        ↓
+Additional Possibilities
+        ↓
+Validation Checks
+        ↓
+Recommended Resolution
+```
+
+The system does not automatically modify infrastructure based on its diagnosis.
+
+---
+
+# Screenshots
+
+The repository includes visual evidence of the deployed infrastructure and validation workflow.
+
+### AWS VPC
+
+![AWS VPC Overview](docs/screenshots/01-aws-vpc-overview.png)
+
+### Network and Subnets
+
+![Network and Subnets](docs/screenshots/02-network-subnets.png)
+
+### Private EC2 and SSM
+
+![Private EC2 and SSM](docs/screenshots/03-private-ec2-ssm.png)
+
+### Application Load Balancer
+
+![Application Load Balancer](docs/screenshots/04-alb.png)
+
+### Security Groups
+
+![Security Groups](docs/screenshots/05-security-groups.png)
+
+### ALB Health Endpoint
+
+![ALB Health](docs/screenshots/06-alb-health.png)
+
+### Deployment Validation
+
+![Deployment Validation](docs/screenshots/07-deployment-validation.png)
+
+### AI Infrastructure Analysis
+
+![AI Infrastructure Analysis](docs/screenshots/08-ai-infrastructure-analysis.png)
+
+### Validation and Automated Tests
+
+![Validation and Tests](docs/screenshots/09-validation-and-tests.png)
+
+---
+
+# Key Design Decisions
+
+## Why private EC2?
+
+The application server does not need to be directly accessible from the internet.
+
+The ALB provides the public application entry point while EC2 remains private.
+
+## Why AWS Systems Manager instead of SSH?
+
+SSM removes the need for:
+
+* Public IP addresses
+* Public SSH
+* Bastion infrastructure
+* SSH key distribution
+
+This significantly reduces the attack surface of the management plane.
+
+## Why no NAT Gateway?
+
+The application server only needs private access to selected AWS services.
+
+VPC endpoints provide this connectivity while avoiding the recurring cost of a NAT Gateway.
+
+## Why immutable ECR tags?
+
+Git commit SHA-based immutable tags create a direct relationship between:
+
+```text
+Source Code
+    ↓
+Git Commit
+    ↓
+Docker Image
+    ↓
+ECR
+    ↓
+Deployment
+```
+
+This improves deployment traceability and prevents accidental tag reuse.
+
+## Why deterministic analysis before AI?
+
+AI is useful for explanation and reasoning, but infrastructure policy checks should be deterministic wherever possible.
+
+Therefore:
+
+```text
+Infrastructure
+      ↓
+Deterministic Checks
+      ↓
+Structured Findings
+      ↓
+AI Explanation
+```
+
+This reduces ambiguity and makes the core security checks testable.
+
+## Why read-only AI?
+
+An AI system should not directly mutate production infrastructure based on generated output.
+
+The project therefore deliberately separates:
+
+```text
+AI Recommendation
+        ≠
+Infrastructure Change
+```
+
+The human operator remains responsible for reviewing and applying changes.
+
+---
+
+# Development Stages
+
+The project was developed incrementally to demonstrate the evolution from basic infrastructure provisioning to a complete automation and analysis platform.
 
 ```text
 Stage 1
@@ -963,41 +1628,7 @@ Portfolio & Documentation
 
 ---
 
-# Current Stage
-
-## Stage 9 — Reproducible Automation ✅
-
-Completed:
-
-* Makefile-based operator interface
-* `make provision`
-* `make plan`
-* `make configure`
-* `make deploy`
-* `make validate`
-* `make destroy`
-* Dynamic Terraform output retrieval for deployment values
-* Git commit SHA image tagging
-* Immutable ECR image tags
-* Automated Docker image build
-* Automated ECR authentication
-* Automated ECR image push
-* Ansible configure/deploy/validate separation
-* Dockerized Ansible controller
-* End-to-end application deployment
-* End-to-end infrastructure validation
-* ALB health validation
-* Private EC2 deployment through AWS SSM
-
-The final validation workflow completed successfully with:
-
-```text
-app : ok=22 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
-```
-
----
-
-# Infrastructure Status
+# Project Status
 
 | Area                           | Status     |
 | ------------------------------ | ---------- |
@@ -1013,73 +1644,71 @@ app : ok=22 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 | Docker Application Deployment  | ✅ Complete |
 | Infrastructure Validation      | ✅ Complete |
 | Reproducible Makefile Workflow | ✅ Complete |
-| AI Infrastructure Copilot      | 🚧 Planned |
-| AI Failure Analysis            | 🚧 Planned |
-| Portfolio Documentation        | 🚧 Planned |
+| AI Infrastructure Analysis     | ✅ Complete |
+| AI Infrastructure Explanation  | ✅ Complete |
+| AI Troubleshooting             | ✅ Complete |
+| AI Infrastructure Validation   | ✅ Complete |
+| Portfolio Documentation        | ✅ Complete |
 
 ---
 
-# Upcoming
+# Final Validation
 
-## Stage 10 — AI Infrastructure Copilot
+The completed platform has been validated across the major layers:
 
-Planned capabilities:
+```text
+Terraform
+   │
+   ▼
+AWS Infrastructure
+   │
+   ▼
+Ansible Configuration
+   │
+   ▼
+Docker Deployment
+   │
+   ▼
+Private EC2
+   │
+   ▼
+Application Load Balancer
+   │
+   ▼
+/health → 200 OK
+```
 
-* Terraform analysis
-* Architecture explanation
-* Security recommendations
-* Cost analysis
-* Configuration explanations
-* Infrastructure recommendations
+And the infrastructure analysis path:
 
-## Stage 11 — AI Explain & Failure Analysis
+```text
+Terraform State
+      │
+      ▼
+Deterministic Analyzer
+      │
+      ▼
+38 Resources
+      │
+      ▼
+0 Findings
+      │
+      ▼
+Validation Passed
+```
 
-Planned capabilities:
+Automated tests completed successfully:
 
-* Validation failure explanation
-* Deployment failure analysis
-* Ansible failure analysis
-* Infrastructure troubleshooting
-* Root-cause analysis
-* Suggested remediation
+```text
+22 passed
+```
 
-## Stage 12 — Portfolio & Documentation
+Ansible validation completed successfully:
 
-Planned work:
+```text
+app : ok=22 changed=0 unreachable=0 failed=0
+```
 
-* Final architecture documentation
-* Architecture diagrams
-* Deployment documentation
-* Troubleshooting guide
-* Infrastructure decisions
-* Security documentation
-* Cost analysis
-* GitHub portfolio presentation
-
----
-
-# Status
-
-### Completed
-
-* Stage 1 — Project Initialization ✅
-* Stage 2 — Terraform Foundation ✅
-* Stage 3 — AWS Networking ✅
-* Stage 4 — Security & IAM ✅
-* Stage 5.1 — EC2 Compute Foundation ✅
-* Stage 5.2 — Application Load Balancer ✅
-* Stage 5.3 — Private SSM Management ✅
-* Stage 5.4 — Private Service Connectivity ✅
-* Stage 6 — Ansible Configuration ✅
-* Stage 7 — Docker Application Deployment ✅
-* Stage 8 — Monitoring & Validation ✅
-* Stage 9 — Reproducible Automation ✅
-
-### Planned
-
-* Stage 10 — AI Infrastructure Copilot 🚧
-* Stage 11 — AI Explain & Failure Analysis 🚧
-* Stage 12 — Portfolio & Documentation 🚧
+The platform therefore demonstrates a complete infrastructure lifecycle from **provisioning to deployment, validation, and AI-assisted analysis**.
 
 ---
 
