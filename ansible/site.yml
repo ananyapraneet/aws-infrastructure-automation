@@ -4,10 +4,10 @@
   become: true
 
   roles:
-    - user_setup
-    - ssh_hardening
-    - system_config
-    - docker
-    - security_hardening
-    - application
-    - validation
+    - { role: user_setup, tags: [configure] }
+    - { role: ssh_hardening, tags: [configure] }
+    - { role: system_config, tags: [configure] }
+    - { role: docker, tags: [configure] }
+    - { role: security_hardening, tags: [configure] }
+    - { role: application, tags: [deploy] }
+    - { role: validation, tags: [validate] }
