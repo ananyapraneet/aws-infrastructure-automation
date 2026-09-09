@@ -1,10 +1,15 @@
 # AWS Infrastructure Automation Platform
 
+[![CI](https://github.com/ananyapraneet/aws-infrastructure-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/ananyapraneet/aws-infrastructure-automation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-oriented AWS infrastructure automation platform that provisions private cloud infrastructure, configures servers, deploys containerized applications, validates infrastructure, and provides **read-only AI-assisted infrastructure analysis and troubleshooting**.
+A production-oriented AWS infrastructure automation platform that provisions private cloud infrastructure, configures servers, deploys containerized applications, validates infrastructure, and provides **read-only AI-assisted 
+infrastructure analysis and troubleshooting**.
 
 Built with **Terraform, Ansible, Docker, Amazon ECR, AWS Systems Manager, Application Load Balancer, Make, Python, Flask, and OpenAI**.
+
+> **Project status:** Complete portfolio project. The AWS environment is designed to be **provisioned on demand for validation and demonstrations**, rather than operated as a permanently running production environment. Validation 
+evidence in this repository represents a successfully provisioned and tested environment. The infrastructure can be removed with `make destroy` when no longer required.
 
 ---
 
@@ -28,6 +33,7 @@ This project demonstrates an end-to-end infrastructure automation workflow cover
 * AI-assisted infrastructure explanations
 * AI-assisted troubleshooting
 * Infrastructure validation
+* Continuous integration with GitHub Actions
 
 The platform intentionally avoids public SSH access and does not use a NAT Gateway.
 
@@ -112,6 +118,46 @@ Private EC2
 
 The validation system checks infrastructure, server configuration, Docker state, deployed image state, and application health.
 
+### Continuous Integration
+
+The repository includes a GitHub Actions CI pipeline that runs automatically on:
+
+* Pushes to `main`
+* Pull requests targeting `main`
+
+The pipeline validates both the Python automation/AI code and Terraform configuration.
+
+```text
+GitHub Push / Pull Request
+            │
+            ├───────────────────┐
+            ▼                   ▼
+     Python Tests        Terraform Validation
+            │                   │
+            ├── pytest          ├── terraform fmt -check
+            │                   ├── terraform init
+            │                   └── terraform validate
+            │
+            └───────────────────┘
+                    │
+                    ▼
+                CI Result
+```
+
+The current Python test suite completes with:
+
+```text
+22 passed
+```
+
+Terraform validation includes formatting checks, initialization without a backend, and configuration validation.
+
+The workflow is defined in:
+
+```text
+.github/workflows/ci.yml
+```
+
 ### AI Infrastructure Copilot
 
 The project includes a read-only AI layer for:
@@ -122,6 +168,7 @@ The project includes a read-only AI layer for:
 * Security recommendations
 * Deployment troubleshooting
 * Failure analysis
+* Infrastructure validation
 
 The deterministic analysis layer runs before AI generation so that the AI consumes structured infrastructure findings rather than raw Terraform state.
 
@@ -248,6 +295,42 @@ Private AWS service connectivity is provided through VPC endpoints.
 ### Network and Subnets
 
 ![AWS Network and Subnets](docs/screenshots/02-network-subnets.png)
+
+---
+
+# Terraform State
+
+The current portfolio implementation uses **local Terraform state**.
+
+Terraform state is stored locally under:
+
+```text
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+```
+
+This is intentional for the scope of this portfolio project and keeps the infrastructure self-contained for demonstration and reproducibility.
+
+However, local state is **not the recommended approach for a production team environment**.
+
+A production implementation should use a remote Terraform backend with appropriate access control and state concurrency protection.
+
+A typical production architecture would look like:
+
+```text
+Terraform
+    │
+    ▼
+Remote State Backend
+    │
+    ├── Shared state
+    ├── Controlled access
+    └── State locking / concurrency protection
+```
+
+A future production deployment could use an Amazon S3-backed Terraform state architecture with appropriate locking and access controls.
+
+Therefore, remote Terraform state is a documented production consideration rather than a capability currently implemented by this repository.
 
 ---
 
@@ -708,6 +791,76 @@ app : ok=22 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 
 ---
 
+# Continuous Integration
+
+The repository uses GitHub Actions to automatically validate changes.
+
+The CI workflow runs on:
+
+* Pushes to `main`
+* Pull requests targeting `main`
+
+The pipeline contains two independent validation jobs.
+
+### Python Tests
+
+The Python job:
+
+1. Checks out the repository
+2. Sets up Python 3.12
+3. Installs project dependencies
+4. Runs `pytest`
+
+Current result:
+
+```text
+22 passed
+```
+
+### Terraform Validation
+
+The Terraform job:
+
+1. Checks out the repository
+2. Sets up Terraform
+3. Runs recursive formatting checks
+4. Initializes Terraform with the backend disabled
+5. Runs `terraform validate`
+
+The workflow intentionally uses:
+
+```bash
+terraform init -backend=false
+```
+
+because the current portfolio implementation uses local Terraform state and CI does not need to access or modify deployed infrastructure.
+
+The complete CI flow is:
+
+```text
+Pull Request / Push
+        │
+        ├───────────────────────┐
+        ▼                       ▼
+ Python Tests             Terraform Validation
+        │                       │
+        ▼                       ├── fmt -check
+     pytest                    ├── init
+        │                       └── validate
+        │
+        └───────────┬───────────┘
+                    ▼
+               CI Success
+```
+
+The workflow is located at:
+
+```text
+.github/workflows/ci.yml
+```
+
+---
+
 # AI Infrastructure Copilot
 
 The project includes a read-only **AI Infrastructure Copilot**.
@@ -768,6 +921,62 @@ infra-ai explain <file>
 infra-ai troubleshoot <file>
 infra-ai validate
 ```
+
+## AI CLI Setup
+
+The AI CLI is installed as an editable local Python package.
+
+From the repository root:
+
+```bash
+pip install -e .
+```
+
+This installs the `infra-ai` command and allows the CLI to be used directly from the development environment.
+
+### OpenAI Configuration
+
+The OpenAI integration reads the `OPENAI_API_KEY` environment variable.
+
+Export the key before using AI-powered commands:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+```
+
+For local development, the value can also be stored in a `.env` file:
+
+```text
+OPENAI_API_KEY=your-api-key
+```
+
+If using a `.env` file, load/export the variable through the developer's preferred environment-loading mechanism before running the AI-powered CLI commands.
+
+The `.env` file must remain local and must **never be committed to Git**.
+
+The deterministic infrastructure analysis and validation commands do not require an OpenAI API key.
+
+Verify that the CLI is installed:
+
+```bash
+infra-ai --help
+```
+
+The AI layer remains read-only:
+
+```text
+Terraform / Input
+       ↓
+Deterministic Analysis
+       ↓
+Structured Findings
+       ↓
+OpenAI Explanation
+       ↓
+Human Review
+```
+
+No infrastructure changes are automatically executed by the AI layer.
 
 ---
 
@@ -973,6 +1182,50 @@ The Application Load Balancer successfully returned:
 
 ![Validation and Tests](docs/screenshots/09-validation-and-tests.png)
 
+### Continuous Integration
+
+GitHub Actions validates the repository on pushes to `main` and pull requests.
+
+The CI pipeline performs:
+
+```text
+Python Tests
+    ↓
+pytest
+    ↓
+Terraform Formatting
+    ↓
+terraform fmt -check
+    ↓
+Terraform Initialization
+    ↓
+terraform init -backend=false
+    ↓
+Terraform Validation
+    ↓
+terraform validate
+```
+
+Current CI validation:
+
+```text
+Python Tests
+22 passed
+
+Terraform
+Formatting: PASSED
+Initialization: PASSED
+Validation: PASSED
+```
+
+The CI workflow is defined in:
+
+```text
+.github/workflows/ci.yml
+```
+
+This provides automated regression and infrastructure configuration checks alongside the project's deployment validation.
+
 ---
 
 # Test Coverage
@@ -1012,12 +1265,18 @@ The final test suite completed with:
 22 passed
 ```
 
+The OpenAI provider tests use mocked API calls and isolated test credentials, so the test suite does not require a real OpenAI API key or external API access.
+
 ---
 
 # Repository Structure
 
 ```text
 aws-infrastructure-automation/
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 │
 ├── app/
 │   ├── app.py
@@ -1072,6 +1331,7 @@ aws-infrastructure-automation/
 │       └── validator.py
 │
 ├── terraform/
+│   ├── .terraform.lock.hcl
 │   ├── alb.tf
 │   ├── ansible_ssm.tf
 │   ├── ec2.tf
@@ -1086,6 +1346,8 @@ aws-infrastructure-automation/
 │   ├── security_groups.tf
 │   ├── ssm.tf
 │   ├── subnets.tf
+│   ├── terraform.tfstate
+│   ├── terraform.tfstate.backup
 │   ├── variables.tf
 │   ├── versions.tf
 │   └── vpc.tf
@@ -1150,6 +1412,7 @@ aws-infrastructure-automation/
 * Make
 * Git
 * Bash
+* GitHub Actions
 
 ## AI
 
@@ -1223,7 +1486,7 @@ Infrastructure changes remain an explicit operator responsibility.
 
 # Cost Considerations
 
-The architecture is designed to avoid unnecessary infrastructure costs while maintaining a realistic production-oriented topology.
+The architecture is designed to balance private connectivity, security, and cost awareness while remaining realistic for a portfolio environment.
 
 The design intentionally avoids:
 
@@ -1232,20 +1495,53 @@ The design intentionally avoids:
 * Public EC2 management
 * Unnecessary managed services
 
-Private AWS service connectivity is instead provided using VPC endpoints.
+Private AWS service connectivity is instead provided through VPC endpoints.
 
-The main cost-bearing components in this architecture can include:
+### NAT Gateway vs VPC Endpoints
 
-* EC2
-* Application Load Balancer
-* VPC interface endpoints
-* ECR storage and image transfer
-* S3 usage
-* AWS Systems Manager-related services depending on usage
+Avoiding a NAT Gateway does **not** mean that VPC endpoints are free.
 
-The absence of a NAT Gateway is particularly intentional because NAT Gateway hourly and data-processing charges can be significant for a small portfolio environment.
+NAT Gateways can incur:
 
-The architecture therefore demonstrates a practical trade-off between **private connectivity, security, and cost awareness** rather than assuming that private networking is automatically free.
+* Hourly charges
+* Data-processing charges
+
+VPC interface endpoints can also incur:
+
+* Hourly endpoint charges
+* Data-processing charges depending on usage
+
+The architectural decision in this project is therefore not based on the assumption that VPC endpoints are universally cheaper.
+
+Instead, the design uses VPC endpoints because the private EC2 instance only requires access to a defined set of AWS services:
+
+```text
+Private EC2
+     │
+     ├── ECR API
+     ├── ECR DKR
+     ├── SSM
+     ├── SSMMessages
+     └── S3
+```
+
+This avoids routing general private-subnet traffic through a NAT Gateway and provides private connectivity to the AWS services required by the workload.
+
+For a small portfolio environment, the resulting architecture demonstrates an important real-world trade-off:
+
+```text
+Private Connectivity
+        +
+Security
+        +
+Controlled AWS Service Access
+        +
+Cost Awareness
+```
+
+Actual AWS costs depend on region, endpoint count, availability-zone placement, traffic volume, storage, and usage patterns.
+
+The environment is therefore intended to be **provisioned when needed and destroyed when no longer required**.
 
 ---
 
@@ -1258,6 +1554,7 @@ The operator machine requires:
 * Terraform
 * Make
 * Git
+* Python 3.12+
 
 AWS credentials must also be configured.
 
@@ -1272,6 +1569,12 @@ The Dockerized Ansible controller image must be available locally:
 
 ```text
 aws-infra-ansible
+```
+
+The Python environment used for the AI CLI should have the project installed in editable mode:
+
+```bash
+pip install -e .
 ```
 
 Docker and AWS CLI remain host prerequisites because they are used for operations such as:
@@ -1304,7 +1607,29 @@ AWS_PROFILE=<profile> AWS_REGION=<region> make provision
 
 ---
 
-## 2. Provision Infrastructure
+## 2. Install the AI CLI
+
+Create or activate the Python environment used for the project and install the repository:
+
+```bash
+pip install -e .
+```
+
+This installs the `infra-ai` command.
+
+For AI-powered functionality, configure the OpenAI API key:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+```
+
+The key is used only by the AI explanation layer and should never be committed to the repository.
+
+The deterministic infrastructure analysis and validation commands can be used without an OpenAI API key.
+
+---
+
+## 3. Provision Infrastructure
 
 Initialize and apply Terraform:
 
@@ -1322,7 +1647,7 @@ Terraform provisions the AWS networking, security, compute, load balancing, IAM,
 
 ---
 
-## 3. Configure the Server
+## 4. Configure the Server
 
 Run the Ansible configuration workflow:
 
@@ -1334,7 +1659,7 @@ This configures the private EC2 instance through AWS Systems Manager.
 
 ---
 
-## 4. Deploy the Application
+## 5. Deploy the Application
 
 Build and deploy the application:
 
@@ -1362,7 +1687,7 @@ Private EC2
 
 ---
 
-## 5. Validate
+## 6. Validate
 
 Run:
 
@@ -1374,7 +1699,7 @@ The validation workflow checks the server, Docker, deployed image, container hea
 
 ---
 
-## 6. Analyze Infrastructure
+## 7. Analyze Infrastructure
 
 Run the infrastructure analyzer:
 
@@ -1391,7 +1716,7 @@ Findings: 0
 
 ---
 
-## 7. Validate Infrastructure with the AI CLI
+## 8. Validate Infrastructure with the AI CLI
 
 Run:
 
@@ -1402,6 +1727,9 @@ infra-ai validate
 Expected result:
 
 ```text
+Infrastructure Validation
+-------------------------
+
 Resources validated: 38
 Checks performed: 4
 Findings: 0
@@ -1426,6 +1754,8 @@ terraform destroy
 ```
 
 Before destroying an environment, ensure that any resources or data that need to be retained have been backed up.
+
+Because this project is designed for on-demand portfolio demonstrations, destroying the environment after validation is the expected operating pattern when the infrastructure is not actively being demonstrated.
 
 ---
 
@@ -1465,48 +1795,6 @@ The system does not automatically modify infrastructure based on its diagnosis.
 
 ---
 
-# Screenshots
-
-The repository includes visual evidence of the deployed infrastructure and validation workflow.
-
-### AWS VPC
-
-![AWS VPC Overview](docs/screenshots/01-aws-vpc-overview.png)
-
-### Network and Subnets
-
-![Network and Subnets](docs/screenshots/02-network-subnets.png)
-
-### Private EC2 and SSM
-
-![Private EC2 and SSM](docs/screenshots/03-private-ec2-ssm.png)
-
-### Application Load Balancer
-
-![Application Load Balancer](docs/screenshots/04-alb.png)
-
-### Security Groups
-
-![Security Groups](docs/screenshots/05-security-groups.png)
-
-### ALB Health Endpoint
-
-![ALB Health](docs/screenshots/06-alb-health.png)
-
-### Deployment Validation
-
-![Deployment Validation](docs/screenshots/07-deployment-validation.png)
-
-### AI Infrastructure Analysis
-
-![AI Infrastructure Analysis](docs/screenshots/08-ai-infrastructure-analysis.png)
-
-### Validation and Automated Tests
-
-![Validation and Tests](docs/screenshots/09-validation-and-tests.png)
-
----
-
 # Key Design Decisions
 
 ## Why private EC2?
@@ -1528,9 +1816,21 @@ This significantly reduces the attack surface of the management plane.
 
 ## Why no NAT Gateway?
 
-The application server only needs private access to selected AWS services.
+The application server only needs private access to a defined set of AWS services.
 
-VPC endpoints provide this connectivity while avoiding the recurring cost of a NAT Gateway.
+VPC endpoints provide private connectivity to those services without requiring the private subnet to route through a NAT Gateway.
+
+This is not assumed to be universally cheaper than VPC endpoints. Both architectures have associated costs.
+
+The decision is primarily based on:
+
+* Reducing unnecessary internet egress paths
+* Providing private AWS service connectivity
+* Avoiding NAT Gateway hourly and data-processing charges
+* Limiting private-subnet connectivity to required AWS services
+* Keeping the portfolio architecture cost-aware
+
+For a small workload, endpoint costs and NAT Gateway costs should be evaluated against the actual number of endpoints, availability zones, and traffic volume.
 
 ## Why immutable ECR tags?
 
@@ -1582,6 +1882,49 @@ Infrastructure Change
 
 The human operator remains responsible for reviewing and applying changes.
 
+## Why local Terraform state?
+
+The current implementation uses local Terraform state to keep the portfolio project self-contained.
+
+This simplifies demonstration and avoids introducing additional backend infrastructure into the project.
+
+However, local state is not appropriate for collaborative production infrastructure.
+
+A production implementation should use a remote backend with controlled access and state concurrency protection.
+
+---
+
+# Portfolio Projects
+
+This project is part of a broader GitHub portfolio demonstrating application development, CI/CD, infrastructure automation, and cloud engineering.
+
+| Project                                                | Focus                                                                                                    | Repository                                                                                               
+|
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | 
+-------------------------------------------------------------------------------------------------------- |
+| **Project 1 — Bookify API**                            | Production-ready SaaS backend with authentication, PostgreSQL, Redis, Celery, Docker, and AWS deployment | [Bookify API](https://github.com/ananyapraneet/bookify-api)                                              
+|
+| **Project 2 — CI/CD Platform**                         | Complete CI/CD platform using Docker, GitHub Actions, automated testing, and deployment workflows        | [CI/CD Platform](https://github.com/ananyapraneet/cicd-platform)                                         
+|
+| **Project 3 — AWS Infrastructure Automation Platform** | Terraform, Ansible, AWS, private EC2, ECR, SSM, validation, and AI-assisted infrastructure analysis      | [AWS Infrastructure Automation 
+Platform](https://github.com/ananyapraneet/aws-infrastructure-automation) |
+
+Together, the three projects demonstrate an increasingly complete engineering lifecycle:
+
+```text
+Application
+    ↓
+CI/CD
+    ↓
+Infrastructure Automation
+    ↓
+Cloud Deployment
+    ↓
+Validation
+    ↓
+AI-Assisted Operations
+```
+
 ---
 
 # Development Stages
@@ -1630,25 +1973,34 @@ Portfolio & Documentation
 
 # Project Status
 
-| Area                           | Status     |
-| ------------------------------ | ---------- |
-| Terraform Infrastructure       | ✅ Complete |
-| VPC Networking                 | ✅ Complete |
-| Security Groups                | ✅ Complete |
-| IAM                            | ✅ Complete |
-| Private EC2                    | ✅ Complete |
-| Application Load Balancer      | ✅ Complete |
-| AWS Systems Manager            | ✅ Complete |
-| Private ECR Connectivity       | ✅ Complete |
-| Ansible Configuration          | ✅ Complete |
-| Docker Application Deployment  | ✅ Complete |
-| Infrastructure Validation      | ✅ Complete |
-| Reproducible Makefile Workflow | ✅ Complete |
-| AI Infrastructure Analysis     | ✅ Complete |
-| AI Infrastructure Explanation  | ✅ Complete |
-| AI Troubleshooting             | ✅ Complete |
-| AI Infrastructure Validation   | ✅ Complete |
-| Portfolio Documentation        | ✅ Complete |
+| Area                           | Status             |
+| ------------------------------ | ------------------ |
+| Terraform Infrastructure       | ✅ Complete         |
+| Terraform CI Validation        | ✅ Complete         |
+| VPC Networking                 | ✅ Complete         |
+| Security Groups                | ✅ Complete         |
+| IAM                            | ✅ Complete         |
+| Private EC2                    | ✅ Complete         |
+| Application Load Balancer      | ✅ Complete         |
+| AWS Systems Manager            | ✅ Complete         |
+| Private ECR Connectivity       | ✅ Complete         |
+| Ansible Configuration          | ✅ Complete         |
+| Docker Application Deployment  | ✅ Complete         |
+| Infrastructure Validation      | ✅ Complete         |
+| Reproducible Makefile Workflow | ✅ Complete         |
+| AI Infrastructure Analysis     | ✅ Complete         |
+| AI Infrastructure Explanation  | ✅ Complete         |
+| AI Troubleshooting             | ✅ Complete         |
+| AI Infrastructure Validation   | ✅ Complete         |
+| GitHub Actions CI              | ✅ Complete         |
+| Portfolio Documentation        | ✅ Complete         |
+| Remote Terraform State Backend | ⚠️ Not Implemented |
+
+The AWS environment itself is **not intended to remain permanently active**. It is provisioned on demand for demonstrations and validation and can be removed with:
+
+```bash
+make destroy
+```
 
 ---
 
@@ -1708,7 +2060,23 @@ Ansible validation completed successfully:
 app : ok=22 changed=0 unreachable=0 failed=0
 ```
 
-The platform therefore demonstrates a complete infrastructure lifecycle from **provisioning to deployment, validation, and AI-assisted analysis**.
+GitHub Actions CI completed successfully with:
+
+```text
+Python Tests
+22 passed
+
+Terraform Formatting
+PASSED
+
+Terraform Initialization
+PASSED
+
+Terraform Validation
+PASSED
+```
+
+The platform therefore demonstrates a complete infrastructure lifecycle from **provisioning to deployment, validation, continuous integration, and AI-assisted analysis**.
 
 ---
 
